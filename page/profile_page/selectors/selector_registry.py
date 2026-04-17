@@ -20,6 +20,8 @@ PROFILE_PAGE_SELECTORS.register(
         key=ProfilePageKey.ACTIVITY_SECTION_TEXT,
         selectors=[
             "//section[contains(@class,'artdeco-card')]//span[normalize-space()='Activity' and not(contains(@class,'visually-hidden'))]",
+            "//div[contains(@componentkey, 'profile.card') and contains(@componentkey, 'Activity')]//*[normalize-space()='Activity' and not(contains(@class,'visually-hidden'))]"
+            
         ],
         parent=None,
     )
