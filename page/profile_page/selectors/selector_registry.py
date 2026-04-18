@@ -11,6 +11,7 @@ PROFILE_PAGE_SELECTORS.register(
         key=ProfilePageKey.PROFILE_CARD,
         selectors=[
             "(//section[contains(@class,'artdeco-card')])[1]//ul[.//li[contains(normalize-space(.),'connections')]]/following-sibling::*[1]",
+            "//section[contains(@componentkey, 'profile.card') and contains(@componentkey, 'Topcard')]"
         ],
         parent=None,
     )
@@ -71,9 +72,8 @@ PROFILE_PAGE_SELECTORS.register(
     SelectorEntry(
         key=ProfilePageKey.MORE_MENU_DIALOG,
         selectors=[
-            "xpath=./following-sibling::div[1][@aria-hidden='false']",
+            "//div[@role='menu']"
         ],
-        parent=ProfilePageKey.MORE_MENU_BUTTON,
     )
 )
 PROFILE_PAGE_SELECTORS.register(
@@ -82,6 +82,7 @@ PROFILE_PAGE_SELECTORS.register(
         selectors=[
             "//button[.//span[text()='Follow']]",
             "//div[@role='button'][.//span[text()='Follow']]",
+            "//div[@role='menuitem'][.//*[text()='Follow']]"
         ],
         parent=ProfilePageKey.PROFILE_CARD,
     )

@@ -85,9 +85,13 @@ class FollowProfile(LinkedInBaseMolecularAction):
             return
 
         following_status = await self._get_following_status()
+        logger.debug("Following status: %s", following_status.name)
         if following_status == FollowingStatus.NOT_FOLLOWING:
             await self.profile.follow_button().click()
             await self.profile.unfollow_button().wait_for(state="visible")
+        elif following_status == FollowingStatus.UNKNOWN:
+            logger.warning("Failed to follow profile. Unknown following status")
+            return
         else:
             logger.info("Already following this profile")
 
