@@ -70,6 +70,7 @@ class WithdrawConnectionRequest(LinkedInBaseMolecularAction):
             self._accomplished = await self.execute_chain_of_actions()
         else:
             logger.warning("Failed to withdraw connection request. User is not in pending state")
+            self._accomplished = False
 
     async def verify_action(self) -> bool:
         return self._accomplished

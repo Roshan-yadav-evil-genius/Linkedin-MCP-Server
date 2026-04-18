@@ -40,9 +40,9 @@ See `page/profile_page/actions/atomic_action.py` (`ClickOnConnectButton` and sib
 
 Implementation: [`core/actions.py`](core/actions.py).
 
-### AtomicAction
+### ElementAction (ABC)
 
-- **One** user-visible step split into **do** and **check**.
+- Shared base for any **runnable step** (atomic or molecular): holds **`self.page`**, **`_accomplished`**, and **`accomplish()`**.
 - Subclasses implement:
   - `async def perform_action(self) -> None`
   - `async def verify_action(self) -> bool`
@@ -50,10 +50,15 @@ Implementation: [`core/actions.py`](core/actions.py).
 
 Callers should use **`await …accomplish()`** and then read **`action.accomplished`**, not assume success without checking.
 
-### MoleculerAction (extends AtomicAction)
+### AtomicAction (extends ElementAction)
 
+- **One** logical browser step: same **perform** / **verify** contract as `ElementAction`, documented as a single-step automation unit.
+
+### MolecularAction (extends ElementAction)
+
+- **Sibling** of `AtomicAction` under `ElementAction` (a molecular flow is not modeled as “one atomic step”).
 - Holds **`chain_of_actions`**: a list of **`AtomicAction`** instances.
-- **`execute_chain_of_actions()`** loops: for each child, **`await child.accomplish()`**; if any child fails, returns `False`; between steps calls **`human_wait`** from `core/human_behavior.py` (configurable `DelayConfig`).
+- **`execute_chain_of_actions()`** loops: for each child, **`await child.accomplish()`**; if any child fails, returns `False`; between steps calls **`human_wait`** from `core/human_behavior.py` (configurable `DelayConfig`). If **`chain_of_actions`** is empty, it logs a warning and returns **`False`** (no vacuous success).
 - Default **`perform_action`** / **`verify_action`** wire the chain result into `_accomplished`.
 
 Subclasses often **override `perform_action`** to branch on page state (e.g. only run the chain if “not connected”) before calling `execute_chain_of_actions()`. Example: `SendConnectionRequest` in `page/profile_page/actions/molecular_action.py`.
@@ -83,7 +88,7 @@ sequenceDiagram
 
     Caller->>PA: await send_connection_request()
     PA->>Mol: await SendConnectionRequest(page).accomplish()
-    Note over Mol: AtomicAction.accomplish runs
+    Note over Mol: ElementAction.accomplish runs
     Mol->>Mol: perform_action (e.g. check connection status)
     alt state allows flow
         Mol->>Chain: await execute_chain_of_actions()
@@ -127,12 +132,12 @@ They lock in **inheritance order** (MRO):
 
 ```text
 LinkedInBaseAtomicAction(LinkedInProfilePageMixin, AtomicAction)
-LinkedInBaseMolecularAction(LinkedInProfilePageMixin, MoleculerAction)
+LinkedInBaseMolecularAction(LinkedInProfilePageMixin, MolecularAction)
 ```
 
 **Mixin first**, then **core base**. That way:
 
-1. `LinkedInProfilePageMixin.__init__` runs and can call **`super().__init__(page, **kwargs)`**, which continues to `AtomicAction.__init__` / `MoleculerAction.__init__`.
+1. `LinkedInProfilePageMixin.__init__` runs and can call **`super().__init__(page, **kwargs)`**, which continues to `ElementAction.__init__` via `AtomicAction` / `MolecularAction`.
 2. Every concrete atomic/molecular on that page subclasses these bases and automatically gets **`self.profile`** and helpers.
 
 ```mermaid
@@ -141,13 +146,16 @@ flowchart TB
         M[LinkedInProfilePageMixin]
         BA[LinkedInBaseAtomicAction]
         BM[LinkedInBaseMolecularAction]
+        E[ElementAction]
         A[AtomicAction]
-        Mol[MoleculerAction]
+        Mol[MolecularAction]
     end
     BA --> M
     BA --> A
+    A --> E
     BM --> M
     BM --> Mol
+    Mol --> E
 ```
 
 Concrete atomics (e.g. `ClickOnMoreButton`) inherit **`LinkedInBaseAtomicAction`** only; they do not repeat the mixin + `AtomicAction` pair.
@@ -219,7 +227,7 @@ Use `page/<new_page>/` as the template name below.
 4. **`actions/base_action.py`** (name may be `action/` in legacy folders)  
    - **Mixin**: `__init__(self, page, **kwargs)` → `super().__init__(page, **kwargs)` → **`self.<name> = YourResolver(page)`**.  
    - Add shared async helpers (wait for shell, read state, etc.).  
-   - Define **`YourBaseAtomicAction(Mixin, AtomicAction)`** and **`YourBaseMolecularAction(Mixin, MoleculerAction)`** with **mixin first**.
+   - Define **`YourBaseAtomicAction(Mixin, AtomicAction)`** and **`YourBaseMolecularAction(Mixin, MolecularAction)`** with **mixin first**.
 
 5. **`actions/atomic_action.py`**  
    - One small class per step, subclass **`YourBaseAtomicAction`**.  

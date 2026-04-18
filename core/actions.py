@@ -1,9 +1,13 @@
 """
 Generic action base classes for browser automation.
-Reusable by any site: implement AtomicAction (single step), MoleculerAction (chain), PageAction (page-level).
+Reusable by any site: subclass ElementAction (via AtomicAction or MolecularAction) or PageAction (page-level).
+
+ElementAction is the shared ABC for runnable steps: page handle, accomplish() pipeline, and abstract
+perform_action / verify_action. AtomicAction and MolecularAction are siblings under ElementAction.
 """
 import logging
 from abc import ABC, abstractmethod
+from typing import Self
 
 from playwright.async_api import Page
 
@@ -13,8 +17,8 @@ from .human_behavior import human_wait
 logger = logging.getLogger(__name__)
 
 
-class AtomicAction:
-    """Single browser step. Subclass and implement perform_action() and verify_action()."""
+class ElementAction(ABC):
+    """Shared base for a single runnable automation step (atomic or molecular chain)."""
 
     def __init__(self, page: Page) -> None:
         self.page = page
@@ -32,7 +36,7 @@ class AtomicAction:
     async def verify_action(self) -> bool:
         pass
 
-    async def accomplish(self) -> "AtomicAction":
+    async def accomplish(self) -> Self:
         """Run perform_action then verify_action; set _accomplished. Logs and sets False on failure."""
         try:
             await self.perform_action()
@@ -43,8 +47,12 @@ class AtomicAction:
         return self
 
 
-class MoleculerAction(AtomicAction):
-    """Action that runs a chain of actions with delay between them. Set chain_of_actions in subclass."""
+class AtomicAction(ElementAction):
+    """One logical browser step. Subclass and implement perform_action() and verify_action()."""
+
+
+class MolecularAction(ElementAction):
+    """Runs a chain of AtomicAction steps with delay between them. Set chain_of_actions in subclass."""
 
     def __init__(self, page: Page) -> None:
         super().__init__(page)
@@ -54,7 +62,13 @@ class MoleculerAction(AtomicAction):
         self,
         delay_between: DelayConfig = DelayConfig(min_ms=500, max_ms=1000),
     ) -> bool:
-        """Run each action's accomplish(), then human_wait between. Returns False on first failure."""
+        """Run each action's accomplish(), then human_wait between. Returns False on first failure or empty chain."""
+        if not self.chain_of_actions:
+            logger.warning(
+                "%s: chain_of_actions is empty; refusing to report success",
+                self.__class__.__name__,
+            )
+            return False
         for action in self.chain_of_actions:
             logger.debug("Executing action: %s", action.__class__.__name__)
             action = await action.accomplish()

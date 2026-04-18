@@ -1,7 +1,7 @@
 """Profile-page base actions: mixin and base classes for atomic/molecular actions."""
 import logging
 
-from core.actions import AtomicAction, MoleculerAction
+from core.actions import AtomicAction, MolecularAction
 
 from ..selectors.selector_resolver import LinkedInProfilePageSelectors
 from playwright.async_api import Locator, Page
@@ -49,6 +49,6 @@ class LinkedInBaseAtomicAction(LinkedInProfilePageMixin, AtomicAction):
         super().__init__(page)
 
 
-class LinkedInBaseMolecularAction(LinkedInProfilePageMixin, MoleculerAction):
+class LinkedInBaseMolecularAction(LinkedInProfilePageMixin, MolecularAction):
     def __init__(self, page: Page):
         super().__init__(page)
