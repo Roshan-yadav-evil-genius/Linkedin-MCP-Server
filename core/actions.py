@@ -7,7 +7,7 @@ perform_action / verify_action. AtomicAction and MolecularAction are siblings un
 """
 import logging
 from abc import ABC, abstractmethod
-from typing import Self
+from typing import Any, Self
 
 from playwright.async_api import Page
 
@@ -83,6 +83,17 @@ class MolecularAction(ElementAction):
 
     async def verify_action(self) -> bool:
         return self._accomplished
+
+
+class CooperativePageStepInit:
+    """
+    First base for page-scoped step classes so ``__init__(page)`` does not repeat.
+
+    Subclass as ``(CooperativePageStepInit, YourPageMixin, AtomicAction)`` (mixin before core action).
+    """
+
+    def __init__(self, page: Page, **kwargs: Any) -> None:
+        super().__init__(page, **kwargs)
 
 
 class PageAction(ABC):

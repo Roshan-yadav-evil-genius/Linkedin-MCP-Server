@@ -18,7 +18,7 @@ class SearchPageAction(LinkedInSearchPageMixin, PageAction):
     
 
     async def wait_for_page_to_load(self):
-        await self._wait_for_page_to_load()
+        await self.search_result.all_filters_button().wait_for(state="visible", timeout=20000)
         logger.info("Search page loaded successfully")
 
     async def open_filter_panel(self):

@@ -1,7 +1,7 @@
 """Profile-page base actions: mixin and base classes for atomic/molecular actions."""
 import logging
 
-from core.actions import AtomicAction, MolecularAction
+from core.actions import AtomicAction, CooperativePageStepInit, MolecularAction
 
 from ..selectors.selector_resolver import LinkedInProfilePageSelectors
 from playwright.async_api import Locator, Page
@@ -15,9 +15,6 @@ class LinkedInProfilePageMixin:
     def __init__(self, page: Page, **kwargs):
         super().__init__(page, **kwargs)
         self.profile = LinkedInProfilePageSelectors(self.page)
-    
-    async def _wait_for_page_to_load(self):
-        await self.profile.activity_section_text().wait_for(state="visible", timeout=20000)
 
     async def _get_connection_status(self) -> ConnectionStatus:
         if await self.profile.connect_button().is_visible():
@@ -44,11 +41,9 @@ class LinkedInProfilePageMixin:
             return None
 
 
-class LinkedInBaseAtomicAction(LinkedInProfilePageMixin, AtomicAction):
-    def __init__(self, page: Page):
-        super().__init__(page)
+class LinkedInBaseAtomicAction(CooperativePageStepInit, LinkedInProfilePageMixin, AtomicAction):
+    pass
 
 
-class LinkedInBaseMolecularAction(LinkedInProfilePageMixin, MolecularAction):
-    def __init__(self, page: Page):
-        super().__init__(page)
+class LinkedInBaseMolecularAction(CooperativePageStepInit, LinkedInProfilePageMixin, MolecularAction):
+    pass

@@ -32,8 +32,7 @@ class ProfilePageAction(LinkedInProfilePageMixin, PageAction):
         return is_valid_linkedin_profile_url(self.profile_url)
     
     async def wait_for_page_to_load(self):
-        await self._wait_for_page_to_load()
-
+        await self.profile.activity_section_text().wait_for(state="visible", timeout=20000)
 
     async def follow_profile(self):
         logger.info("Following profile...")

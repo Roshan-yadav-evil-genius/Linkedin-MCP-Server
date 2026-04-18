@@ -131,18 +131,19 @@ The mixin is **not** a Playwright concept; it is plain Python **cooperative mult
 They lock in **inheritance order** (MRO):
 
 ```text
-LinkedInBaseAtomicAction(LinkedInProfilePageMixin, AtomicAction)
-LinkedInBaseMolecularAction(LinkedInProfilePageMixin, MolecularAction)
+LinkedInBaseAtomicAction(CooperativePageStepInit, LinkedInProfilePageMixin, AtomicAction)
+LinkedInBaseMolecularAction(CooperativePageStepInit, LinkedInProfilePageMixin, MolecularAction)
 ```
 
-**Mixin first**, then **core base**. That way:
+**`CooperativePageStepInit` first** (forwards `(page, **kwargs)` into the MRO), then **page mixin**, then **core action** (`AtomicAction` / `MolecularAction`). That way:
 
-1. `LinkedInProfilePageMixin.__init__` runs and can call **`super().__init__(page, **kwargs)`**, which continues to `ElementAction.__init__` via `AtomicAction` / `MolecularAction`.
+1. `CooperativePageStepInit.__init__` → `LinkedInProfilePageMixin.__init__` → `ElementAction.__init__` via `AtomicAction` / `MolecularAction`, without repeating `__init__` on each page’s base classes.
 2. Every concrete atomic/molecular on that page subclasses these bases and automatically gets **`self.profile`** and helpers.
 
 ```mermaid
 flowchart TB
     subgraph bases [Profile page action bases]
+        Coop[CooperativePageStepInit]
         M[LinkedInProfilePageMixin]
         BA[LinkedInBaseAtomicAction]
         BM[LinkedInBaseMolecularAction]
@@ -150,9 +151,11 @@ flowchart TB
         A[AtomicAction]
         Mol[MolecularAction]
     end
+    BA --> Coop
     BA --> M
     BA --> A
     A --> E
+    BM --> Coop
     BM --> M
     BM --> Mol
     Mol --> E
@@ -227,7 +230,7 @@ Use `page/<new_page>/` as the template name below.
 4. **`actions/base_action.py`** (name may be `action/` in legacy folders)  
    - **Mixin**: `__init__(self, page, **kwargs)` → `super().__init__(page, **kwargs)` → **`self.<name> = YourResolver(page)`**.  
    - Add shared async helpers (wait for shell, read state, etc.).  
-   - Define **`YourBaseAtomicAction(Mixin, AtomicAction)`** and **`YourBaseMolecularAction(Mixin, MolecularAction)`** with **mixin first**.
+   - Define **`YourBaseAtomicAction(CooperativePageStepInit, Mixin, AtomicAction)`** and **`YourBaseMolecularAction(CooperativePageStepInit, Mixin, MolecularAction)`** (`CooperativePageStepInit` from [`core/actions.py`](core/actions.py), then mixin, then core action).
 
 5. **`actions/atomic_action.py`**  
    - One small class per step, subclass **`YourBaseAtomicAction`**.  
