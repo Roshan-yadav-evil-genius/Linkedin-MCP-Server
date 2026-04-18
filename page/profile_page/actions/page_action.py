@@ -40,16 +40,12 @@ class ProfilePageAction(LinkedInProfilePageMixin, PageAction):
         action = await FollowProfile(self.page).accomplish()
         if not action.accomplished:
             logger.error("%s failed While Following Profile", action.__class__.__name__)
-        else:
-            logger.info("Profile followed successfully")
         return action.accomplished
 
     async def unfollow_profile(self):
         action = await UnfollowProfile(self.page).accomplish()
         if not action.accomplished:
             logger.error("%s failed While Unfollowing Profile", action.__class__.__name__)
-        else:
-            logger.info("Profile unfollowed successfully")
         return action.accomplished
 
     async def send_connection_request(self, note: str = ""):
@@ -57,8 +53,7 @@ class ProfilePageAction(LinkedInProfilePageMixin, PageAction):
         action = await SendConnectionRequest(self.page, note).accomplish()
         if not action.accomplished:
             logger.error("%s failed While Sending Connection Request", action.__class__.__name__)
-        else:
-            logger.info("Connection request sent successfully")
+
         return action.accomplished
 
     async def withdraw_connection_request(self):
@@ -66,6 +61,4 @@ class ProfilePageAction(LinkedInProfilePageMixin, PageAction):
         action = await WithdrawConnectionRequest(self.page).accomplish()
         if not action.accomplished:
             logger.error("%s failed While Withdrawing Connection Request", action.__class__.__name__)
-        else:
-            logger.info("Connection request withdrawn successfully")
         return action.accomplished

@@ -47,7 +47,9 @@ async def main():
         )
 
         page = await context.new_page()
-        profile_url = "https://www.linkedin.com/in/patricia-nittel-mha/"
+        # profile_url = "https://www.linkedin.com/in/patricia-nittel-mha/"
+        # profile_url = "https://www.linkedin.com/in/janet-higgins-165b6913/"
+        profile_url = "https://www.linkedin.com/in/harshit-goel-support/"
         logger.info("Navigating to profile: %s", profile_url)
         await page.goto(profile_url, wait_until="load")
         page_action = ProfilePageAction(page)
@@ -56,8 +58,8 @@ async def main():
         await page_action.follow_profile()
         logger.info("Running unfollow_profile")
         await page_action.unfollow_profile()
-        logger.info("Running send_connection_request")
-        await page_action.send_connection_request()
+        # logger.info("Running send_connection_request")
+        # await page_action.send_connection_request()
         logger.info("Running withdraw_connection_request")
         await page_action.withdraw_connection_request()
 

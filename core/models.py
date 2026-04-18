@@ -1,26 +1,40 @@
 from enum import Enum
 from typing import Generic, Optional, TypeVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 E = TypeVar("E", bound=Enum)
 
 
 class SelectorEntry(BaseModel, Generic[E]):
-    """One locator definition: key, list of fallback selectors, and optional parent key for scoping."""
+    """
+    One locator definition: key, optional parent for *local* selectors only, and two selector lists.
+
+    ``local_selectors`` are chained with ``.or_()`` on ``get(parent)`` when ``parent`` is set,
+    otherwise on the page. ``global_selectors`` are always chained on the page (parent ignored).
+    """
 
     key: E = Field(..., description="Registry key for this entry (e.g. ProfilePageKey.CONNECT_BUTTON)")
-    selectors: list[str] = Field(
-        ...,
-        min_length=1,
-        description="XPath/CSS strings for Playwright locator (first wins; rest as .or_() fallbacks)",
+    local_selectors: list[str] = Field(
+        default_factory=list,
+        description="XPath/CSS strings scoped under parent (or page if parent is None); fallbacks via .or_()",
+    )
+    global_selectors: list[str] = Field(
+        default_factory=list,
+        description="XPath/CSS strings always resolved from the page root; fallbacks via .or_()",
     )
     parent: Optional[E] = Field(
         default=None,
-        description="Parent key for scoping; None means page root",
+        description="Parent key for scoping local_selectors only; ignored for global_selectors",
     )
 
     model_config = {"frozen": True}
+
+    @model_validator(mode="after")
+    def _non_empty_selectors(self) -> "SelectorEntry[E]":
+        if not self.local_selectors and not self.global_selectors:
+            raise ValueError(f"SelectorEntry {self.key!r} must define at least one of local_selectors or global_selectors")
+        return self
 
 
 class SelectorRegistry(Generic[E]):

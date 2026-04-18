@@ -20,11 +20,12 @@ class LinkedInProfilePageMixin:
         await self.profile.activity_section_text().wait_for(state="visible", timeout=20000)
 
     async def _get_connection_status(self) -> ConnectionStatus:
-        if await self.profile.connect_button().count():
+        if await self.profile.connect_button().is_visible():
             return ConnectionStatus.NOT_CONNECTED
-        if await self.profile.pending_button().count():
+        elif await self.profile.pending_button().is_visible():
             return ConnectionStatus.PENDING
-        return ConnectionStatus.CONNECTED
+        else:
+            return ConnectionStatus.CONNECTED
 
     async def _get_following_status(self) -> FollowingStatus:
         if await self.profile.follow_button().count():

@@ -48,6 +48,7 @@ class SendConnectionRequest(LinkedInBaseMolecularAction):
         if connection_status == ConnectionStatus.NOT_CONNECTED:
             self._accomplished = await self.execute_chain_of_actions()
         else:
+            self._accomplished = True
             logger.info("Connection already established")
 
     async def verify_action(self) -> bool:

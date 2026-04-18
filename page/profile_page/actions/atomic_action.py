@@ -1,8 +1,12 @@
 """Atomic actions for LinkedIn profile page."""
+import logging
+
 from .base_action import LinkedInBaseAtomicAction
 from core.delays import DelayConfig
 from core.human_behavior import human_typing
 from playwright.async_api import Page
+
+logger = logging.getLogger(__name__)
 
 
 class ClickOnMoreButton(LinkedInBaseAtomicAction):
@@ -11,7 +15,9 @@ class ClickOnMoreButton(LinkedInBaseAtomicAction):
 
     async def perform_action(self):
         if not await self.profile.more_menu_dialog().is_visible():
+            logger.info("Clicking on more menu button")
             await self.profile.more_menu_button().click()
+            logger.info("Waiting for more menu dialog to appear")
             await self.profile.more_menu_dialog().wait_for(state="visible")
 
     async def verify_action(self) -> bool:
