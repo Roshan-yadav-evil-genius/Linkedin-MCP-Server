@@ -33,14 +33,29 @@ class LinkedInSearchPageSelectors(SelectorResolver):
     def connections_of_filter_input(self) -> Locator:
         return self.get(SearchPageKey.CONNECTIONS_OF_FILTER_INPUT)
 
-    def followers_of_filter_button(self) -> Locator:
-        return self.get(SearchPageKey.FOLLOWERS_OF_FILTER_BUTTON)
-
     def filter_panel(self) -> Locator:
         return self.get(SearchPageKey.FILTER_PANEL)
 
-    def suggestion_floating_portal(self) -> Locator:
-        return self.get(SearchPageKey.SUGGESTION_FLOATING_PORTAL)
-
     def suggestion_floating_portal_first_item(self) -> Locator:
         return self.get(SearchPageKey.SUGGESTION_FLOATING_PORTAL_ITEM)
+
+    def selected_suggestion_floating_portal_item(self) -> Locator:
+        return self.get(SearchPageKey.SELECTED_SUGGESTION_FLOATING_PORTAL_ITEM)
+
+    def followers_of_filter_button(self) -> Locator:
+        return self.get(SearchPageKey.FOLLOWERS_OF_FILTER_BUTTON)
+    
+    def followers_of_filter_input(self) -> Locator:
+        return self.get(SearchPageKey.FOLLOWERS_OF_FILTER_INPUT)
+    
+    def apply_filters_button(self) -> Locator:
+        return self.get(SearchPageKey.APPLY_FILTERS_BUTTON)
+
+    def pagination_next_button(self) -> Locator:
+        return self.get(SearchPageKey.PAGINATION_NEXT_BUTTON)
+
+    def pagination_current_page(self) -> Locator:
+        return self.get(SearchPageKey.PAGINATION_CURRENT_PAGE)
+    
+    def pagination_previous_button(self) -> Locator:
+        return self.get(SearchPageKey.PAGINATION_PREVIOUS_BUTTON)

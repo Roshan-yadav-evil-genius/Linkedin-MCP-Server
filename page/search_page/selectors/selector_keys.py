@@ -14,5 +14,11 @@ class SearchPageKey(Enum):
     FOLLOWERS_OF_FILTER_BUTTON = "followers_of_filter_button"
     FOLLOWERS_OF_FILTER_INPUT = "followers_of_filter_input"
 
-    SUGGESTION_FLOATING_PORTAL = "suggestion_floating_portal"
     SUGGESTION_FLOATING_PORTAL_ITEM = "suggestion_floating_portal_item"
+    SELECTED_SUGGESTION_FLOATING_PORTAL_ITEM = "selected_suggestion_floating_portal_item"
+
+    APPLY_FILTERS_BUTTON = "apply_filters_button"
+
+    PAGINATION_CURRENT_PAGE = "pagination_current_page"
+    PAGINATION_NEXT_BUTTON = "pagination_next_button"
+    PAGINATION_PREVIOUS_BUTTON = "pagination_previous_button"

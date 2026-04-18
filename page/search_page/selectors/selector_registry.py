@@ -43,6 +43,25 @@ SEARCH_PAGE_SELECTORS.register(
         parent=None,
     )
 )
+
+SEARCH_PAGE_SELECTORS.register(
+    SelectorEntry(
+        key=SearchPageKey.SUGGESTION_FLOATING_PORTAL_ITEM,
+        local_selectors=[],
+        global_selectors=["(//div[@data-floating-ui-portal]//div[@role='option'])[1]"],
+        parent=None,
+    )
+)
+
+SEARCH_PAGE_SELECTORS.register(
+    SelectorEntry(
+        key=SearchPageKey.SELECTED_SUGGESTION_FLOATING_PORTAL_ITEM,
+        local_selectors=[],
+        global_selectors=["//div[./p[text()='Connections of' or text()='Followers of']]/following-sibling::div[1]/div[@role='radio']"],
+        parent=None,
+    )
+)
+
 SEARCH_PAGE_SELECTORS.register(
     SelectorEntry(
         key=SearchPageKey.FOLLOWERS_OF_FILTER_BUTTON,
@@ -54,18 +73,45 @@ SEARCH_PAGE_SELECTORS.register(
 
 SEARCH_PAGE_SELECTORS.register(
     SelectorEntry(
-        key=SearchPageKey.SUGGESTION_FLOATING_PORTAL,
+        key=SearchPageKey.FOLLOWERS_OF_FILTER_INPUT,
         local_selectors=[],
-        global_selectors=["//div[@data-floating-ui-portal]"],
+        global_selectors=["//input[@placeholder='Add a creator']"],
         parent=None,
     )
 )
 
 SEARCH_PAGE_SELECTORS.register(
     SelectorEntry(
-        key=SearchPageKey.SUGGESTION_FLOATING_PORTAL_ITEM,
+        key=SearchPageKey.APPLY_FILTERS_BUTTON,
         local_selectors=[],
-        global_selectors=["(//div[@data-floating-ui-portal]//div[@role='option'])[1]"],
+        global_selectors=["//a[.//span[text()='Show results']]"],
+        parent=None,
+    )
+)
+
+SEARCH_PAGE_SELECTORS.register(
+    SelectorEntry(
+        key=SearchPageKey.PAGINATION_NEXT_BUTTON,
+        local_selectors=[],
+        global_selectors=["//button[.//span[text()='Next']]"],
+        parent=None,
+    )
+)
+
+SEARCH_PAGE_SELECTORS.register(
+    SelectorEntry(
+        key=SearchPageKey.PAGINATION_CURRENT_PAGE,
+        local_selectors=[],
+        global_selectors=["//button[contains(@aria-label,'Page') and @aria-current='true']//span"],
+        parent=None,
+    )
+)
+
+SEARCH_PAGE_SELECTORS.register(
+    SelectorEntry(
+        key=SearchPageKey.PAGINATION_PREVIOUS_BUTTON,
+        local_selectors=[],
+        global_selectors=["//button[.//span[text()='Previous']]"],
         parent=None,
     )
 )

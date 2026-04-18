@@ -9,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 CHROME_PROFILE = Path("./ChromeUserData")
 
-DEFAULT_VIEWPORT: dict[str, int] = {"width": 1920, "height": 1080}
+DEFAULT_VIEWPORT: dict[str, int] = {"width": 1920, "height": 800}
 
 # Keys are Chromium CLI flags passed to launch; values are human-readable reasons (docs only).
 CHROMIUM_LAUNCH_REASONS: dict[str, str] = {

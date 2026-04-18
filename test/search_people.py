@@ -9,7 +9,7 @@ sys.path.insert(0, str(_repo_root))
 
 from test.base import configure_logging, persistent_context_kwargs
 from page.search_page.action.page_action import SearchPage
-from page.search_page.action.atomic_action import ClickOnAllFiltersButton, ClickOnConnectionsOfFilterButton, FillConnectionsOfFilterInput, SelectSuggestionFloatingPortalFirstItem
+from page.search_page.action.atomic_action import ClickOnAllFiltersButton, ClickOnConnectionsOfFilterButton, ClickOnPaginationNextButton, ClickOnPaginationPreviousButton, FillConnectionsOfFilterInput, SelectSuggestionFloatingPortalFirstItem, ClickOnFollowersOfFilterButton, FillFollowersOfFilterInput, ClickOnApplyFiltersButton
 from core.human_behavior import human_wait, DelayConfig
 
 configure_logging()
@@ -29,36 +29,41 @@ async def main():
         search_page_action = SearchPage(page)
         await search_page_action.wait_for_page_to_load()
         # import atomic actions
-        click_on_all_filters_button = ClickOnAllFiltersButton(page)
-        result = await click_on_all_filters_button.accomplish()
-        if result.accomplished:
-            logger.info("All filters button clicked successfully")
-        else:
-            logger.error("All filters button clicked failed")
+        # click_on_all_filters_button = ClickOnAllFiltersButton(page)
+        # await click_on_all_filters_button.accomplish()
+
+        # await human_wait(page, config=DelayConfig(min_ms=500, max_ms=1000))
+        # click_on_connections_of_filter_button = ClickOnConnectionsOfFilterButton(page)
+        # await click_on_connections_of_filter_button.accomplish()
+
+        # await human_wait(page, config=DelayConfig(min_ms=500, max_ms=1000))
+        # fill_connections_of_filter_input = FillConnectionsOfFilterInput(page, "Roshan")
+        # await fill_connections_of_filter_input.accomplish()
+
+        # await human_wait(page, config=DelayConfig(min_ms=500, max_ms=1000))
+        # click_on_followers_of_filter_button = ClickOnFollowersOfFilterButton(page)
+        # await click_on_followers_of_filter_button.accomplish()
+
+        # await human_wait(page, config=DelayConfig(min_ms=500, max_ms=1000))
+        # fill_followers_of_filter_input = FillFollowersOfFilterInput(page, "Roshan")
+        # await fill_followers_of_filter_input.accomplish()   
+
+        # await human_wait(page, config=DelayConfig(min_ms=500, max_ms=1000))
+        # select_suggestion_floating_portal_first_item = SelectSuggestionFloatingPortalFirstItem(page)
+        # await select_suggestion_floating_portal_first_item.accomplish()
+
+        # await human_wait(page, config=DelayConfig(min_ms=500, max_ms=1000))
+        # click_on_apply_filters_button = ClickOnApplyFiltersButton(page)
+        # await click_on_apply_filters_button.accomplish()
 
         await human_wait(page, config=DelayConfig(min_ms=500, max_ms=1000))
-        click_on_connections_of_filter_button = ClickOnConnectionsOfFilterButton(page)
-        result = await click_on_connections_of_filter_button.accomplish()
-        if result.accomplished:
-            logger.info("Connections of filter button clicked successfully")
-        else:
-            logger.error("Connections of filter button clicked failed")
+        click_on_pagination_next_button = ClickOnPaginationNextButton(page)
+        await click_on_pagination_next_button.accomplish()
 
         await human_wait(page, config=DelayConfig(min_ms=500, max_ms=1000))
-        fill_connections_of_filter_input = FillConnectionsOfFilterInput(page, "Roshan")
-        result = await fill_connections_of_filter_input.accomplish()
-        if result.accomplished:
-            logger.info("Connections of filter input filled successfully")
-        else:
-            logger.error("Connections of filter input filled failed")
+        click_on_pagination_previous_button = ClickOnPaginationPreviousButton(page)
+        await click_on_pagination_previous_button.accomplish()
 
-        await human_wait(page, config=DelayConfig(min_ms=500, max_ms=1000))
-        select_suggestion_floating_portal_first_item = SelectSuggestionFloatingPortalFirstItem(page)
-        result = await select_suggestion_floating_portal_first_item.accomplish()
-        if result.accomplished:
-            logger.info("Suggestion floating portal first item selected successfully")
-        else:
-            logger.error("Suggestion floating portal first item selected failed")
         await context.wait_for_event("close", timeout=0)
         await context.close()
 
