@@ -15,7 +15,8 @@ class SearchPageKey(Enum):
     FOLLOWERS_OF_FILTER_INPUT = "followers_of_filter_input"
 
     SUGGESTION_FLOATING_PORTAL_ITEM = "suggestion_floating_portal_item"
-    SELECTED_SUGGESTION_FLOATING_PORTAL_ITEM = "selected_suggestion_floating_portal_item"
+    CONNECTIONS_OF_SELECTED_SUGGESTION_FLOATING_PORTAL_ITEM = "connections_of_selected_suggestion_floating_portal_item"
+    FOLLOWERS_OF_SELECTED_SUGGESTION_FLOATING_PORTAL_ITEM = "followers_of_selected_suggestion_floating_portal_item"
 
     APPLY_FILTERS_BUTTON = "apply_filters_button"
 

@@ -55,13 +55,21 @@ SEARCH_PAGE_SELECTORS.register(
 
 SEARCH_PAGE_SELECTORS.register(
     SelectorEntry(
-        key=SearchPageKey.SELECTED_SUGGESTION_FLOATING_PORTAL_ITEM,
+        key=SearchPageKey.CONNECTIONS_OF_SELECTED_SUGGESTION_FLOATING_PORTAL_ITEM,
         local_selectors=[],
-        global_selectors=["//div[./p[text()='Connections of' or text()='Followers of']]/following-sibling::div[1]/div[@role='radio']"],
+        global_selectors=["//div[./p[text()='Connections of']]/following-sibling::div[1]/div[@role='radio']"],
         parent=None,
     )
 )
 
+SEARCH_PAGE_SELECTORS.register(
+    SelectorEntry(
+        key=SearchPageKey.FOLLOWERS_OF_SELECTED_SUGGESTION_FLOATING_PORTAL_ITEM,
+        local_selectors=[],
+        global_selectors=["//div[./p[text()='Followers of']]/following-sibling::div[1]/div[@role='radio']"],
+        parent=None,
+    )
+)
 SEARCH_PAGE_SELECTORS.register(
     SelectorEntry(
         key=SearchPageKey.FOLLOWERS_OF_FILTER_BUTTON,

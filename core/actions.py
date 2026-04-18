@@ -76,14 +76,12 @@ class BaseMolecularAction(BaseElementAction):
             )
             return False
         for action in self.chain_of_actions:
-            logger.debug("Executing action: %s", action.__class__.__name__)
             action = await action.accomplish()
-            if not action.accomplished:
-                logger.error("Action %s failed", action.__class__.__name__)
-                return False
+            if action.accomplished:
+                await human_wait(self.page, config=delay_between)
             else:
-                logger.info("Action %s succeeded", action.__class__.__name__)
-            await human_wait(self.page, config=delay_between)
+                return False
+
         return True
 
     async def perform_action(self) -> None:

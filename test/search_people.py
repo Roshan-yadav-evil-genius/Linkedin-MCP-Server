@@ -7,9 +7,10 @@ _test_dir = Path(__file__).resolve().parent
 _repo_root = _test_dir.parent
 sys.path.insert(0, str(_repo_root))
 
+from page.search_page.action.types import Filter
 from test.base import configure_logging, persistent_context_kwargs
 from page.search_page.action.page_action import SearchPage
-from page.search_page.action.atomic_action import ClickOnAllFiltersButton, ClickOnConnectionsOfFilterButton, ClickOnPaginationNextButton, ClickOnPaginationPreviousButton, FillConnectionsOfFilterInput, SelectSuggestionFloatingPortalFirstItem, ClickOnFollowersOfFilterButton, FillFollowersOfFilterInput, ClickOnApplyFiltersButton
+from page.search_page.action.atomic_action import ClickOnAllFiltersButton, ClickOnConnectionsOfFilterButton, ClickOnPaginationNextButton, ClickOnPaginationPreviousButton, FillConnectionsOfFilterInput, ClickOnFollowersOfFilterButton, FillFollowersOfFilterInput, ClickOnApplyFiltersButton, SelectConnectionsOfSuggestionFirstItem, SelectFollowersOfSuggestionFirstItem
 from core.human_behavior import human_wait, DelayConfig
 
 configure_logging()
@@ -28,6 +29,9 @@ async def main():
         await page.goto(query, wait_until="load")
         search_page_action = SearchPage(page)
         await search_page_action.wait_for_page_to_load()
+
+        await search_page_action.apply_filters(Filter(connection_of="Roshan", followers_of="Abhishek"))
+
         # import atomic actions
         # click_on_all_filters_button = ClickOnAllFiltersButton(page)
         # await click_on_all_filters_button.accomplish()
@@ -56,13 +60,13 @@ async def main():
         # click_on_apply_filters_button = ClickOnApplyFiltersButton(page)
         # await click_on_apply_filters_button.accomplish()
 
-        await human_wait(page, config=DelayConfig(min_ms=500, max_ms=1000))
-        click_on_pagination_next_button = ClickOnPaginationNextButton(page)
-        await click_on_pagination_next_button.accomplish()
+        # await human_wait(page, config=DelayConfig(min_ms=500, max_ms=1000))
+        # click_on_pagination_next_button = ClickOnPaginationNextButton(page)
+        # await click_on_pagination_next_button.accomplish()
 
-        await human_wait(page, config=DelayConfig(min_ms=500, max_ms=1000))
-        click_on_pagination_previous_button = ClickOnPaginationPreviousButton(page)
-        await click_on_pagination_previous_button.accomplish()
+        # await human_wait(page, config=DelayConfig(min_ms=500, max_ms=1000))
+        # click_on_pagination_previous_button = ClickOnPaginationPreviousButton(page)
+        # await click_on_pagination_previous_button.accomplish()
 
         await context.wait_for_event("close", timeout=0)
         await context.close()

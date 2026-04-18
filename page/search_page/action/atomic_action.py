@@ -51,22 +51,35 @@ class FillConnectionsOfFilterInput(SearchAtomicAction):
         return False
 
 
-class SelectSuggestionFloatingPortalFirstItem(SearchAtomicAction):
+class SelectConnectionsOfSuggestionFirstItem(SearchAtomicAction):
     async def perform_action(self):
         # Locator is returned synchronously; await only the async checks/actions on it.
         first_item = self.search_result.suggestion_floating_portal_first_item()
 
         if await first_item.is_visible():
             await first_item.click()
-            await self.search_result.selected_suggestion_floating_portal_item().wait_for(state="visible")
+            await self.search_result.connections_of_selected_suggestion_floating_portal_item().wait_for(state="visible")
         else:
             raise Exception("Not Valid Person is available with specified Name")
 
     async def verify_action(self) -> bool:
-        if await self.search_result.selected_suggestion_floating_portal_item().is_visible():
+        if await self.search_result.connections_of_selected_suggestion_floating_portal_item().is_visible():
             return True
         return False
 
+class SelectFollowersOfSuggestionFirstItem(SearchAtomicAction):
+    async def perform_action(self):
+        first_item = self.search_result.suggestion_floating_portal_first_item()
+        if await first_item.is_visible():
+            await first_item.click()
+            await self.search_result.followers_of_selected_suggestion_floating_portal_item().wait_for(state="visible")
+        else:
+            raise Exception("Not Valid Person is available with specified Name")
+
+    async def verify_action(self) -> bool:
+        if await self.search_result.followers_of_selected_suggestion_floating_portal_item().is_visible():
+            return True
+        return False
 
 class ClickOnFollowersOfFilterButton(SearchAtomicAction):
     async def perform_action(self):

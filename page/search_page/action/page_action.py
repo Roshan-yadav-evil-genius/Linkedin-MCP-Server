@@ -1,5 +1,7 @@
-from .atomic_action import ClickOnAllFiltersButton
+from .atomic_action import ClickOnAllFiltersButton, ClickOnPaginationNextButton, ClickOnPaginationPreviousButton
+from .molecular_action import ApplyFilters
 from .page_utility import SearchPageAction
+from .types import Filter
 from playwright.async_api import Page
 import logging
 
@@ -8,10 +10,18 @@ logger = logging.getLogger(__name__)
 
 class SearchPage(SearchPageAction):
 
-    async def open_filter_panel(self):
-        click_on_all_filters_button = ClickOnAllFiltersButton(self.page)
-        result = await click_on_all_filters_button.accomplish()
-        if result.accomplished:
-            logger.info("All filters button clicked successfully")
-        else:
-            logger.error("All filters button clicked failed")
+
+    async def apply_filters(self, filter: Filter):
+        apply_filters = ApplyFilters(self.page, filter)
+        await apply_filters.accomplish()
+    
+
+    async def click_on_pagination_next_button(self):
+        click_on_pagination_next_button = ClickOnPaginationNextButton(self.page)
+        await click_on_pagination_next_button.accomplish()
+    
+
+    async def click_on_pagination_previous_button(self):
+        click_on_pagination_previous_button = ClickOnPaginationPreviousButton(self.page)
+        await click_on_pagination_previous_button.accomplish()
+
