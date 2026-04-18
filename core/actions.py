@@ -1,13 +1,13 @@
 """
 Generic action base classes for browser automation.
-Reusable by any site: subclass ElementAction (via AtomicAction or MolecularAction) or PageAction (page-level).
+Reusable by any site: subclass BaseElementAction (via BaseAtomicAction or BaseMolecularAction) or BasePageAction (page-level).
 
-ElementAction is the shared ABC for runnable steps: page handle, accomplish() pipeline, and abstract
-perform_action / verify_action. AtomicAction and MolecularAction are siblings under ElementAction.
+BaseElementAction is the shared ABC for runnable steps: page handle, accomplish() pipeline, and abstract
+perform_action / verify_action. BaseAtomicAction and BaseMolecularAction are siblings under BaseElementAction.
 """
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Self
+from typing import Self
 
 from playwright.async_api import Page
 
@@ -17,7 +17,7 @@ from .human_behavior import human_wait
 logger = logging.getLogger(__name__)
 
 
-class ElementAction(ABC):
+class BaseElementAction(ABC):
     """Shared base for a single runnable automation step (atomic or molecular chain)."""
 
     def __init__(self, page: Page) -> None:
@@ -47,16 +47,16 @@ class ElementAction(ABC):
         return self
 
 
-class AtomicAction(ElementAction):
+class BaseAtomicAction(BaseElementAction):
     """One logical browser step. Subclass and implement perform_action() and verify_action()."""
 
 
-class MolecularAction(ElementAction):
-    """Runs a chain of AtomicAction steps with delay between them. Set chain_of_actions in subclass."""
+class BaseMolecularAction(BaseElementAction):
+    """Runs a chain of BaseAtomicAction steps with delay between them. Set chain_of_actions in subclass."""
 
     def __init__(self, page: Page) -> None:
         super().__init__(page)
-        self.chain_of_actions: list[AtomicAction] = []
+        self.chain_of_actions: list[BaseAtomicAction] = []
 
     async def execute_chain_of_actions(
         self,
@@ -75,6 +75,8 @@ class MolecularAction(ElementAction):
             if not action.accomplished:
                 logger.error("Action %s failed", action.__class__.__name__)
                 return False
+            else:
+                logger.info("Action %s succeeded", action.__class__.__name__)
             await human_wait(self.page, config=delay_between)
         return True
 
@@ -85,23 +87,16 @@ class MolecularAction(ElementAction):
         return self._accomplished
 
 
-class CooperativePageStepInit:
-    """
-    First base for page-scoped step classes so ``__init__(page)`` does not repeat.
-
-    Subclass as ``(CooperativePageStepInit, YourPageMixin, AtomicAction)`` (mixin before core action).
-    """
-
-    def __init__(self, page: Page, **kwargs: Any) -> None:
-        super().__init__(page, **kwargs)
-
-
-class PageAction(ABC):
-    """Abstract page-level orchestrator. Subclass and implement is_valid_page()."""
+class BasePageAction(ABC):
+    """Abstract page-level orchestrator. Subclass must provide is_valid_page and wait_for_page_to_load (often via PageUtility before BasePageAction in MRO)."""
 
     def __init__(self, page: Page) -> None:
         self.page = page
 
     @abstractmethod
     def is_valid_page(self) -> bool:
+        pass
+
+    @abstractmethod
+    async def wait_for_page_to_load(self) -> None:
         pass

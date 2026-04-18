@@ -1,8 +1,7 @@
-from .base_action import LinkedInBaseAtomicAction
+from .page_utility import SearchAtomicAction
 
 
-
-class ClickOnAllFiltersButton(LinkedInBaseAtomicAction):
+class ClickOnAllFiltersButton(SearchAtomicAction):
 
     async def perform_action(self):
         if await self.search_result.all_filters_button().is_visible():

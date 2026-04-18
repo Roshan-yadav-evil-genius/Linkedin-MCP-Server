@@ -47,7 +47,7 @@ PROFILE_PAGE_SELECTORS.register(
     SelectorEntry(
         key=ProfilePageKey.PENDING_BUTTON,
         local_selectors=[
-            "//button[.//span[text()='Pending']]",
+            # "//button[.//span[text()='Pending']]",
             "//div[@role='button'][.//span[text()='Pending']]",
         ],
         global_selectors=[

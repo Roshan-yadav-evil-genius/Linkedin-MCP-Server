@@ -1,3 +1,3 @@
-from .page_action import ProfilePageAction
+from .page_action import ProfilePage
 
-__all__ = ["ProfilePageAction"]
+__all__ = ["ProfilePage"]

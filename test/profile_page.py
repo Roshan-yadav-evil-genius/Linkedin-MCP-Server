@@ -13,7 +13,7 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 from playwright.async_api import async_playwright
-from page.profile_page.actions import ProfilePageAction
+from page.profile_page.actions import ProfilePage
 
 
 async def main():
@@ -23,10 +23,12 @@ async def main():
         page = await context.new_page()
         # profile_url = "https://www.linkedin.com/in/patricia-nittel-mha/"
         # profile_url = "https://www.linkedin.com/in/janet-higgins-165b6913/"
-        profile_url = "https://www.linkedin.com/in/harshit-goel-support/"
+        # profile_url = "https://www.linkedin.com/in/harshit-goel-support/"
+        profile_url = "https://www.linkedin.com/in/manish-kumar-prajapat-81a9893a5/"
+        
         logger.info("Navigating to profile: %s", profile_url)
         await page.goto(profile_url, wait_until="load")
-        page_action = ProfilePageAction(page)
+        page_action = ProfilePage(page)
         await page_action.wait_for_page_to_load()
         logger.info("Running follow_profile")
         await page_action.follow_profile()

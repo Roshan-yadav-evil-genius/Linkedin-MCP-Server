@@ -1,7 +1,7 @@
 """Molecular actions for LinkedIn profile page."""
 import logging
 
-from .base_action import LinkedInBaseMolecularAction
+from .page_utility import ProfileMolecularAction
 from .profile_state import ConnectionStatus, FollowingStatus
 from playwright.async_api import Page
 
@@ -21,7 +21,7 @@ from .atomic_action import (
 logger = logging.getLogger(__name__)
 
 
-class SendConnectionRequest(LinkedInBaseMolecularAction):
+class SendConnectionRequest(ProfileMolecularAction):
     def __init__(self, page: Page, invitation_note: str = ""):
         super().__init__(page)
         self.invitation_note = invitation_note
@@ -55,7 +55,7 @@ class SendConnectionRequest(LinkedInBaseMolecularAction):
         return self._accomplished
 
 
-class WithdrawConnectionRequest(LinkedInBaseMolecularAction):
+class WithdrawConnectionRequest(ProfileMolecularAction):
     def __init__(self, page: Page):
         super().__init__(page)
         self.chain_of_actions = [
@@ -76,7 +76,7 @@ class WithdrawConnectionRequest(LinkedInBaseMolecularAction):
         return self._accomplished
 
 
-class FollowProfile(LinkedInBaseMolecularAction):
+class FollowProfile(ProfileMolecularAction):
     def __init__(self, page: Page):
         super().__init__(page)
 
@@ -103,7 +103,7 @@ class FollowProfile(LinkedInBaseMolecularAction):
         return False
 
 
-class UnfollowProfile(LinkedInBaseMolecularAction):
+class UnfollowProfile(ProfileMolecularAction):
     def __init__(self, page: Page):
         super().__init__(page)
         self.chain_of_actions = [

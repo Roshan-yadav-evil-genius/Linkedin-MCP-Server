@@ -1,7 +1,7 @@
 """Atomic actions for LinkedIn profile page."""
 import logging
 
-from .base_action import LinkedInBaseAtomicAction
+from .page_utility import ProfileAtomicAction
 from core.delays import DelayConfig
 from core.human_behavior import human_typing
 from playwright.async_api import Page
@@ -9,7 +9,7 @@ from playwright.async_api import Page
 logger = logging.getLogger(__name__)
 
 
-class ClickOnMoreButton(LinkedInBaseAtomicAction):
+class ClickOnMoreButton(ProfileAtomicAction):
     def __init__(self, page: Page):
         super().__init__(page)
 
@@ -26,7 +26,7 @@ class ClickOnMoreButton(LinkedInBaseAtomicAction):
         return False
 
 
-class ClickOnConnectButton(LinkedInBaseAtomicAction):
+class ClickOnConnectButton(ProfileAtomicAction):
     def __init__(self, page: Page):
         super().__init__(page)
 
@@ -41,7 +41,7 @@ class ClickOnConnectButton(LinkedInBaseAtomicAction):
         return False
 
 
-class ClickOnAddNoteButton(LinkedInBaseAtomicAction):
+class ClickOnAddNoteButton(ProfileAtomicAction):
     def __init__(self, page: Page):
         super().__init__(page)
 
@@ -56,7 +56,7 @@ class ClickOnAddNoteButton(LinkedInBaseAtomicAction):
         return False
 
 
-class ClickOnSendWithoutNoteButton(LinkedInBaseAtomicAction):
+class ClickOnSendWithoutNoteButton(ProfileAtomicAction):
     def __init__(self, page: Page):
         super().__init__(page)
 
@@ -70,7 +70,7 @@ class ClickOnSendWithoutNoteButton(LinkedInBaseAtomicAction):
         return False
 
 
-class FillAddNoteInput(LinkedInBaseAtomicAction):
+class FillAddNoteInput(ProfileAtomicAction):
     def __init__(self, page: Page, invitation_note: str):
         super().__init__(page)
         self.invitation_note = invitation_note
@@ -88,7 +88,7 @@ class FillAddNoteInput(LinkedInBaseAtomicAction):
         return False
 
 
-class SubmitInvitationNote(LinkedInBaseAtomicAction):
+class SubmitInvitationNote(ProfileAtomicAction):
     def __init__(self, page: Page):
         super().__init__(page)
 
@@ -102,7 +102,7 @@ class SubmitInvitationNote(LinkedInBaseAtomicAction):
         return False
 
 
-class ClickOnPendingButton(LinkedInBaseAtomicAction):
+class ClickOnPendingButton(ProfileAtomicAction):
     def __init__(self, page: Page):
         super().__init__(page)
 
@@ -116,7 +116,7 @@ class ClickOnPendingButton(LinkedInBaseAtomicAction):
         return False
 
 
-class ClickOnWithdrawButton(LinkedInBaseAtomicAction):
+class ClickOnWithdrawButton(ProfileAtomicAction):
     def __init__(self, page: Page):
         super().__init__(page)
 
@@ -130,7 +130,7 @@ class ClickOnWithdrawButton(LinkedInBaseAtomicAction):
         return False
 
 
-class ClickOnUnfollowButton(LinkedInBaseAtomicAction):
+class ClickOnUnfollowButton(ProfileAtomicAction):
     def __init__(self, page: Page):
         super().__init__(page)
 
@@ -144,7 +144,7 @@ class ClickOnUnfollowButton(LinkedInBaseAtomicAction):
         return False
 
 
-class ClickOnDialogUnfollowButton(LinkedInBaseAtomicAction):
+class ClickOnDialogUnfollowButton(ProfileAtomicAction):
     def __init__(self, page: Page):
         super().__init__(page)
 

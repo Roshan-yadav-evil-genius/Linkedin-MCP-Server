@@ -3,36 +3,22 @@ import logging
 
 from playwright.async_api import Page
 
-from core.actions import PageAction
-from core.utils import extract_profile_user_id, is_valid_linkedin_profile_url
+from core.utils import extract_profile_user_id
 
-from .base_action import LinkedInProfilePageMixin
 from .molecular_action import (
     FollowProfile,
     SendConnectionRequest,
     UnfollowProfile,
     WithdrawConnectionRequest,
 )
+from .page_utility import ProfilePageAction
 
 logger = logging.getLogger(__name__)
 
 
-class ProfilePageAction(LinkedInProfilePageMixin, PageAction):
+class ProfilePage(ProfilePageAction):
     """Orchestrates profile flows; delegates to molecular actions (SendConnectionRequest, WithdrawConnectionRequest, FollowProfile, UnfollowProfile)."""
 
-    def __init__(self, page: Page):
-        super().__init__(page)
-        self.profile_url = self.page.url
-        if not is_valid_linkedin_profile_url(self.profile_url):
-            logger.error("Invalid LinkedIn profile URL: %s", self.profile_url)
-            raise ValueError("Invalid LinkedIn profile URL.")
-        self.user_id = extract_profile_user_id(self.profile_url)
-
-    def is_valid_page(self) -> bool:
-        return is_valid_linkedin_profile_url(self.profile_url)
-    
-    async def wait_for_page_to_load(self):
-        await self.profile.activity_section_text().wait_for(state="visible", timeout=20000)
 
     async def follow_profile(self):
         logger.info("Following profile...")
