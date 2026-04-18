@@ -39,10 +39,16 @@ class BaseElementAction(ABC):
     async def accomplish(self) -> Self:
         """Run perform_action then verify_action; set _accomplished. Logs and sets False on failure."""
         try:
+            logger.info("Performing action: '%s'", self.__class__.__name__)
             await self.perform_action()
+            logger.info("Verifying action: '%s'", self.__class__.__name__)
             self._accomplished = await self.verify_action()
+            if self._accomplished:
+                logger.info("Action '%s' succeeded", self.__class__.__name__)
+            else:
+                logger.warning("Action '%s' failed", self.__class__.__name__)
         except Exception as e:
-            logger.exception("%s Failed: %s", self.__class__.__name__, e)
+            logger.exception("'%s' Failed: %s", self.__class__.__name__, e)
             self._accomplished = False
         return self
 

@@ -25,3 +25,47 @@ SEARCH_PAGE_SELECTORS.register(
         parent=None,
     )
 )
+
+SEARCH_PAGE_SELECTORS.register(
+    SelectorEntry(
+        key=SearchPageKey.CONNECTIONS_OF_FILTER_BUTTON,
+        local_selectors=[],
+        global_selectors=["//button[.//span[text()='Add a connection']]"],
+        parent=None,
+    )
+)
+
+SEARCH_PAGE_SELECTORS.register(
+    SelectorEntry(
+        key=SearchPageKey.CONNECTIONS_OF_FILTER_INPUT,
+        local_selectors=[],
+        global_selectors=["//input[@placeholder='Add a connection']"],
+        parent=None,
+    )
+)
+SEARCH_PAGE_SELECTORS.register(
+    SelectorEntry(
+        key=SearchPageKey.FOLLOWERS_OF_FILTER_BUTTON,
+        local_selectors=[],
+        global_selectors=["//button[.//span[text()='Add a creator']]"],
+        parent=None,
+    )
+)
+
+SEARCH_PAGE_SELECTORS.register(
+    SelectorEntry(
+        key=SearchPageKey.SUGGESTION_FLOATING_PORTAL,
+        local_selectors=[],
+        global_selectors=["//div[@data-floating-ui-portal]"],
+        parent=None,
+    )
+)
+
+SEARCH_PAGE_SELECTORS.register(
+    SelectorEntry(
+        key=SearchPageKey.SUGGESTION_FLOATING_PORTAL_ITEM,
+        local_selectors=[],
+        global_selectors=["(//div[@data-floating-ui-portal]//div[@role='option'])[1]"],
+        parent=None,
+    )
+)
