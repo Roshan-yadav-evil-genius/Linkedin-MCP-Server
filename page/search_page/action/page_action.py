@@ -1,27 +1,34 @@
-from .atomic_action import ClickOnAllFiltersButton, ClickOnPaginationNextButton, ClickOnPaginationPreviousButton
+import logging
+
+from playwright.async_api import Page
+
+from .atomic_action import ClickOnPaginationNextButton, ClickOnPaginationPreviousButton
 from .molecular_action import ApplyFilters
 from .page_utility import SearchPageAction
 from .types import Filter
-from playwright.async_api import Page
-import logging
 
 logger = logging.getLogger(__name__)
 
 
 class SearchPage(SearchPageAction):
+    async def apply_filters(self, filter: Filter) -> bool:
+        action = ApplyFilters(self.page, filter)
+        await action.accomplish()
+        if not action.accomplished:
+            logger.error("%s failed while applying filters", action.__class__.__name__)
+        return action.accomplished
 
+    async def click_on_pagination_next_button(self) -> bool:
+        action = ClickOnPaginationNextButton(self.page)
+        await action.accomplish()
+        if not action.accomplished:
+            logger.error("%s failed", action.__class__.__name__)
+        return action.accomplished
 
-    async def apply_filters(self, filter: Filter):
-        apply_filters = ApplyFilters(self.page, filter)
-        await apply_filters.accomplish()
-    
-
-    async def click_on_pagination_next_button(self):
-        click_on_pagination_next_button = ClickOnPaginationNextButton(self.page)
-        await click_on_pagination_next_button.accomplish()
-    
-
-    async def click_on_pagination_previous_button(self):
-        click_on_pagination_previous_button = ClickOnPaginationPreviousButton(self.page)
-        await click_on_pagination_previous_button.accomplish()
+    async def click_on_pagination_previous_button(self) -> bool:
+        action = ClickOnPaginationPreviousButton(self.page)
+        await action.accomplish()
+        if not action.accomplished:
+            logger.error("%s failed", action.__class__.__name__)
+        return action.accomplished
 

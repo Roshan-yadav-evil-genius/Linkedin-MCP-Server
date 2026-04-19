@@ -62,3 +62,11 @@ class LinkedInSearchPageSelectors(SelectorResolver):
     
     def pagination_previous_button(self) -> Locator:
         return self.get(SearchPageKey.PAGINATION_PREVIOUS_BUTTON)
+
+    def connection_degree_checkbox_row(self, degree: int) -> Locator:
+        """Scoped ``role=checkbox`` row for Connections facet (1st / 2nd / 3rd+)."""
+        label = {1: "1st", 2: "2nd", 3: "3rd+"}[degree]
+        return self.page.locator(
+            "//div[@componentkey='SearchResults_AllFilters']"
+            f"//div[@role='checkbox'][.//p[normalize-space()='{label}']]"
+        ).first

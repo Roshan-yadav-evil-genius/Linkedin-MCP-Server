@@ -1,14 +1,22 @@
 import json
 import logging
+from urllib.parse import quote_plus
 
 from fastmcp import FastMCP
 
 from chrome_profile_manager import PageNotFoundError, get_chrome_profile_manager
+from linkedin_mcp_bridge import run_profile_page, run_search_page
 from page.search_page.action.types import Filter
 from utils import html_to_markdown
 
 mcp = FastMCP("LinkedInMCP")
 logger = logging.getLogger(__name__)
+
+
+def _linkedin_action_message(tool_name: str, ok: bool) -> str:
+    if ok:
+        return f"Success: {tool_name} completed."
+    return f"Failed: {tool_name} did not complete or verify. Check server logs for details."
 
 
 def _serialize_eval_result(value: object) -> str:
@@ -50,7 +58,7 @@ async def login(start_url: str = "about:blank") -> str:
     """
     await get_chrome_profile_manager().run_interactive_profile_session(start_url=start_url)
     return "Login session completed. Authenticated state saved and ready for automation."
-    
+
 
 @mcp.tool
 async def open_page(url: str)->str:
@@ -181,7 +189,15 @@ async def send_connection_request(page_id: str, note: str = "")->str:
     - Requires an authenticated session (typically after `login`)
     - May no-op or error if already connected, invite pending, or LinkedIn limits apply
     """
-    pass
+    profile, err = await run_profile_page(page_id)
+    if err:
+        return err
+    try:
+        ok = await profile.send_connection_request(note=note)
+    except Exception as e:
+        logger.exception("send_connection_request failed page_id=%s", page_id)
+        return f"Failed: send_connection_request raised: {e}"
+    return _linkedin_action_message("send_connection_request", ok)
 
 
 @mcp.tool
@@ -204,7 +220,15 @@ async def withdraw_connection_request(page_id: str)->str:
     - Use `send_connection_request` to send a new request, not this tool
     - Fails or no-ops if there is no pending request to withdraw
     """
-    pass
+    profile, err = await run_profile_page(page_id)
+    if err:
+        return err
+    try:
+        ok = await profile.withdraw_connection_request()
+    except Exception as e:
+        logger.exception("withdraw_connection_request failed page_id=%s", page_id)
+        return f"Failed: withdraw_connection_request raised: {e}"
+    return _linkedin_action_message("withdraw_connection_request", ok)
 
 @mcp.tool
 async def follow_profile(page_id: str)->str:
@@ -225,7 +249,15 @@ async def follow_profile(page_id: str)->str:
     - Requires an authenticated session (typically after `login`)
     - May no-op if already following or if the control is not available
     """
-    pass
+    profile, err = await run_profile_page(page_id)
+    if err:
+        return err
+    try:
+        ok = await profile.follow_profile()
+    except Exception as e:
+        logger.exception("follow_profile failed page_id=%s", page_id)
+        return f"Failed: follow_profile raised: {e}"
+    return _linkedin_action_message("follow_profile", ok)
 
 @mcp.tool
 async def unfollow_profile(page_id: str)->str:
@@ -246,7 +278,15 @@ async def unfollow_profile(page_id: str)->str:
     - Requires an authenticated session (typically after `login`)
     - May no-op if not currently following
     """
-    pass
+    profile, err = await run_profile_page(page_id)
+    if err:
+        return err
+    try:
+        ok = await profile.unfollow_profile()
+    except Exception as e:
+        logger.exception("unfollow_profile failed page_id=%s", page_id)
+        return f"Failed: unfollow_profile raised: {e}"
+    return _linkedin_action_message("unfollow_profile", ok)
 
 
 # ============================================================= [ Search Page Tools ] =============================================================
@@ -263,15 +303,27 @@ async def search_people(query: str)->str:
     - query: Search string as the user would type in LinkedIn people search
 
     Returns:
-    - Status, summary, or `page_id` guidance string (implementation-defined until wired)
+    - Message including a new `page_id` for the opened people-search tab (use with `get_page_content` and `apply_filters`)
 
     Notes:
-    - This signature does **not** take `page_id`; the implementation is responsible for navigation or session page choice
+    - This signature does **not** take `page_id`; it opens a new tracked tab via the same browser session as `open_page`
     - For **facet filters** (degrees, connections of, followers of), open the people search results in a tab with `open_page`, pass that `page_id` to `apply_filters`, and ensure the UI shows the All filters / results view expected by automation
     - Requires an authenticated session for full results (typically after `login`)
     - This tool only drives the browser; it does not return the results body. After the page has updated, call `get_page_content` with the tab’s `page_id` so the agent receives the current view as Markdown
     """
-    pass
+    url = (
+        "https://www.linkedin.com/search/results/people/"
+        f"?keywords={quote_plus(query)}&origin=SWITCH_SEARCH_VERTICAL"
+    )
+    try:
+        page_id = await get_chrome_profile_manager().open_page(url)
+    except Exception as e:
+        logger.exception("search_people open_page failed query=%r", query)
+        return f"Failed to open LinkedIn people search: {e}"
+    return (
+        f"Opened LinkedIn people search for query={query!r}. page_id={page_id!r}. "
+        "Call get_page_content with this page_id to read the results as Markdown."
+    )
 
 @mcp.tool
 async def search_person_in_my_connections(query: str)->str:
@@ -286,7 +338,7 @@ async def search_person_in_my_connections(query: str)->str:
     - query: Name or keyword to match within the connections search experience
 
     Returns:
-    - Status or result string (implementation-defined)
+    - Message including a new `page_id` for the opened tab (1st-degree network filter on people search)
 
     Notes:
     - Contrast with `search_people`, which targets broader people search
@@ -294,7 +346,23 @@ async def search_person_in_my_connections(query: str)->str:
     - Exact navigation (My Network → Connections vs other entry points) is implementation-defined
     - This tool only drives the browser; it does not return the results body. After the page has updated, call `get_page_content` with the tab’s `page_id` so the agent receives the current view as Markdown
     """
-    pass
+    # https://www.linkedin.com/search/results/people/?keywords=hr&origin=GLOBAL_SEARCH_HEADER&network=%5B%22F%22%5D
+    # First-degree network facet on people search (approximates “my connections” discovery).
+    url = (
+        "https://www.linkedin.com/search/results/people/"
+        f"?keywords={quote_plus(query)}"
+        "&origin=MEMBER_PROFILE_CANNED_SEARCH"
+        "&network=%5B%22F%22%5D"
+    )
+    try:
+        page_id = await get_chrome_profile_manager().open_page(url)
+    except Exception as e:
+        logger.exception("search_person_in_my_connections open_page failed query=%r", query)
+        return f"Failed to open LinkedIn connections-scoped search: {e}"
+    return (
+        f"Opened LinkedIn people search (1st-degree / connections network) for query={query!r}. "
+        f"page_id={page_id!r}. Call get_page_content with this page_id to read the results as Markdown."
+    )
 
 @mcp.tool
 async def apply_filters(page_id: str, filter: Filter)->str:
@@ -321,7 +389,15 @@ async def apply_filters(page_id: str, filter: Filter)->str:
     - Field-level descriptions also live on the `Filter` model in code (`page/search_page/action/types.py`)
     - This tool only mutates the page; it does not return updated results. After filters are applied and the results view has refreshed, call `get_page_content(page_id)` so the agent reads the new state as Markdown
     """
-    pass
+    search, err = await run_search_page(page_id)
+    if err:
+        return err
+    try:
+        ok = await search.apply_filters(filter)
+    except Exception as e:
+        logger.exception("apply_filters failed page_id=%s", page_id)
+        return f"Failed: apply_filters raised: {e}"
+    return _linkedin_action_message("apply_filters", ok)
 
 @mcp.tool
 async def click_on_pagination_next_button(page_id: str)->str:
@@ -343,7 +419,15 @@ async def click_on_pagination_next_button(page_id: str)->str:
     - Does not change the query; only moves within paginated results
     - After the next page loads, call `get_page_content(page_id)` so the agent receives the updated results as Markdown
     """
-    pass
+    search, err = await run_search_page(page_id)
+    if err:
+        return err
+    try:
+        ok = await search.click_on_pagination_next_button()
+    except Exception as e:
+        logger.exception("click_on_pagination_next_button failed page_id=%s", page_id)
+        return f"Failed: click_on_pagination_next_button raised: {e}"
+    return _linkedin_action_message("click_on_pagination_next_button", ok)
 
 @mcp.tool
 async def click_on_pagination_previous_button(page_id: str)->str:
@@ -364,7 +448,15 @@ async def click_on_pagination_previous_button(page_id: str)->str:
     - Requires an authenticated session (typically after `login`)
     - After the previous page loads, call `get_page_content(page_id)` so the agent receives the updated results as Markdown
     """
-    pass
+    search, err = await run_search_page(page_id)
+    if err:
+        return err
+    try:
+        ok = await search.click_on_pagination_previous_button()
+    except Exception as e:
+        logger.exception("click_on_pagination_previous_button failed page_id=%s", page_id)
+        return f"Failed: click_on_pagination_previous_button raised: {e}"
+    return _linkedin_action_message("click_on_pagination_previous_button", ok)
 
 
 if __name__ == "__main__":

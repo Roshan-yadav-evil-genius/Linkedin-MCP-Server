@@ -3,6 +3,35 @@ from core.human_behavior import human_typing, DelayConfig
 from playwright.async_api import Page
 
 
+class SyncConnectionDegreeFilters(SearchAtomicAction):
+    """Align Connections (1st / 2nd / 3rd+) checkboxes in the All filters panel with ``degrees``."""
+
+    def __init__(self, page: Page, degrees: list[int]) -> None:
+        super().__init__(page)
+        self._want: set[int] = set(degrees)
+
+    async def perform_action(self) -> None:
+        for n in (1, 2, 3):
+            row = self.search_result.connection_degree_checkbox_row(n)
+            if await row.count() == 0:
+                continue
+            want = n in self._want
+            checked = (await row.get_attribute("aria-checked")) == "true"
+            if checked != want:
+                await row.click()
+
+    async def verify_action(self) -> bool:
+        for n in (1, 2, 3):
+            row = self.search_result.connection_degree_checkbox_row(n)
+            if await row.count() == 0:
+                continue
+            want = n in self._want
+            checked = (await row.get_attribute("aria-checked")) == "true"
+            if checked != want:
+                return False
+        return True
+
+
 class ClickOnAllFiltersButton(SearchAtomicAction):
 
     async def perform_action(self):
@@ -125,6 +154,8 @@ class ClickOnApplyFiltersButton(SearchAtomicAction):
 
 class ClickOnPaginationNextButton(SearchAtomicAction):
     async def perform_action(self):
+        if await self.search_result.pagination_current_page().is_visible():
+            raise Exception("No More Pages to Navigate to")
         if await self.search_result.pagination_next_button().is_visible():
             self.current_page = await self.search_result.pagination_current_page().text_content()
             self.current_page = int(self.current_page)

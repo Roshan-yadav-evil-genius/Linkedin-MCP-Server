@@ -7,7 +7,7 @@ import secrets
 import string
 from pathlib import Path
 
-from playwright.async_api import Page
+from playwright.async_api import Error, Page
 
 from browser_profile_config import persistent_context_kwargs
 
@@ -40,6 +40,23 @@ class ChromeProfileManager:
             if candidate not in self._pages:
                 return candidate
 
+    async def _ensure_persistent_context_has_tab_locked(self) -> None:
+        """
+        Chromium often fails ``new_page()`` with ``Target.createTarget`` if the persistent
+        context has **zero** tabs. Keep one startup tab; close duplicates only.
+        """
+        assert self._lock.locked()
+        assert self._context is not None
+        startup = list(self._context.pages)
+        for p in startup[1:]:
+            try:
+                await p.close()
+            except Exception:
+                logger.exception("Error closing duplicate startup tab")
+        if not self._context.pages:
+            await self._context.new_page()
+        logger.debug("Context tab count after stabilize: %d", len(self._context.pages))
+
     async def _start_playwright_if_needed(self) -> None:
         assert self._lock.locked()
         if self._playwright is not None:
@@ -57,8 +74,7 @@ class ChromeProfileManager:
         self._context = await self._playwright.chromium.launch_persistent_context(
             **persistent_context_kwargs(user_data_dir=self._user_data_dir, headless=self._headless)
         )
-        for p in list(self._context.pages):
-            await p.close()
+        await self._ensure_persistent_context_has_tab_locked()
         logger.info("Persistent Chromium context launched")
 
     async def ensure_ready(self) -> None:
@@ -93,9 +109,8 @@ class ChromeProfileManager:
             self._context = await self._playwright.chromium.launch_persistent_context(
                 **persistent_context_kwargs(user_data_dir=self._user_data_dir, headless=False)
             )
-            for p in list(self._context.pages):
-                await p.close()
-            page = await self._context.new_page()
+            await self._ensure_persistent_context_has_tab_locked()
+            page = self._context.pages[0]
             await page.goto(start_url, wait_until="domcontentloaded")
             self._interactive_profile_session_active = True
             context_ref = self._context
@@ -120,7 +135,28 @@ class ChromeProfileManager:
             await self._start_playwright_if_needed()
             await self._launch_persistent_context_if_needed()
             assert self._context is not None
-            page = await self._context.new_page()
+            await self._ensure_persistent_context_has_tab_locked()
+            try:
+                page = await self._context.new_page()
+            except Error as e:
+                err = str(e)
+                # Only safe to recreate context when no MCP tabs are tracked (otherwise we'd orphan page_ids).
+                if (
+                    ("Target.createTarget" in err or "Failed to open a new tab" in err)
+                    and not self._pages
+                ):
+                    logger.warning("new_page failed with no tracked tabs (%s); recreating context once", e)
+                    try:
+                        await self._context.close()
+                    except Exception:
+                        logger.exception("Error closing wedged context")
+                    self._context = None
+                    await self._launch_persistent_context_if_needed()
+                    assert self._context is not None
+                    await self._ensure_persistent_context_has_tab_locked()
+                    page = await self._context.new_page()
+                else:
+                    raise
             page_id = self._allocate_page_id()
             self._pages[page_id] = page
             try:
