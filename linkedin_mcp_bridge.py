@@ -7,10 +7,30 @@ from typing import Tuple
 from playwright.async_api import Page
 
 from chrome_profile_manager import PageNotFoundError, get_chrome_profile_manager
+from page.messaging_page.action.page_action import MessagingPage
 from page.profile_page.actions.page_action import ProfilePage
 from page.search_page.action.page_action import SearchPage
 
 logger = logging.getLogger(__name__)
+
+# page_id -> True after load_messaging_chat succeeds; required before send_messaging_message.
+_messaging_chat_loaded: dict[str, bool] = {}
+
+
+def set_messaging_chat_loaded(page_id: str, loaded: bool) -> None:
+    if loaded:
+        _messaging_chat_loaded[page_id] = True
+    else:
+        _messaging_chat_loaded.pop(page_id, None)
+
+
+def require_messaging_chat_loaded(page_id: str) -> str | None:
+    if _messaging_chat_loaded.get(page_id):
+        return None
+    return (
+        "No chat loaded for this tab. Call load_messaging_chat with this page_id first "
+        "(after opening a LinkedIn messaging URL, for example a new conversation)."
+    )
 
 
 def resolve_tracked_page(page_id: str) -> Page | str:
@@ -60,3 +80,24 @@ async def run_search_page(page_id: str) -> Tuple[SearchPage | None, str | None]:
         logger.exception("Search wait_for_page_to_load failed page_id=%s", page_id)
         return None, f"Search page did not become ready in time: {e}"
     return search, None
+
+
+async def run_messaging_page(page_id: str) -> Tuple[MessagingPage | None, str | None]:
+    """
+    Return ``(MessagingPage, None)`` after load wait, or ``(None, error)`` if resolve/URL/load fails.
+    """
+    resolved = resolve_tracked_page(page_id)
+    if isinstance(resolved, str):
+        return None, resolved
+    messaging = MessagingPage(resolved)
+    if not messaging.is_valid_page():
+        return None, (
+            "This tab is not a LinkedIn messaging URL. "
+            "Use open_page with a messaging URL (for example a new message thread) first."
+        )
+    try:
+        await messaging.wait_for_page_to_load()
+    except Exception as e:
+        logger.exception("Messaging wait_for_page_to_load failed page_id=%s", page_id)
+        return None, f"Messaging page did not become ready in time: {e}"
+    return messaging, None

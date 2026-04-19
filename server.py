@@ -5,7 +5,13 @@ from urllib.parse import quote_plus
 from fastmcp import FastMCP
 
 from chrome_profile_manager import PageNotFoundError, get_chrome_profile_manager
-from linkedin_mcp_bridge import run_profile_page, run_search_page
+from linkedin_mcp_bridge import (
+    require_messaging_chat_loaded,
+    run_messaging_page,
+    run_profile_page,
+    run_search_page,
+    set_messaging_chat_loaded,
+)
 from page.search_page.action.types import Filter
 from utils import html_to_markdown
 
@@ -457,6 +463,79 @@ async def click_on_pagination_previous_button(page_id: str)->str:
         logger.exception("click_on_pagination_previous_button failed page_id=%s", page_id)
         return f"Failed: click_on_pagination_previous_button raised: {e}"
     return _linkedin_action_message("click_on_pagination_previous_button", ok)
+
+# ============================================================= [ Messaging Page Tools ] =============================================================
+
+
+@mcp.tool
+async def load_messaging_chat(page_id: str, user_name: str) -> str:
+    """
+    Opens the conversation with a member by name on the LinkedIn messaging tab for ``page_id``.
+
+    Use when:
+    - The tab already shows LinkedIn messaging (for example ``/messaging/thread/new/`` or a thread URL)
+    - You need to select a recipient from the name search before sending a message
+
+    Parameters:
+    - page_id: Tab handle from ``open_page``
+    - user_name: Name to type in the messaging recipient search (must match a selectable result)
+
+    Returns:
+    - Status string; on success you may call ``send_messaging_message`` on the same ``page_id``
+
+    Notes:
+    - Requires an authenticated session (typically after ``login``)
+    - Call ``send_messaging_message`` only after this tool succeeds for the same ``page_id``
+    """
+    if not (user_name or "").strip():
+        return "Failed: user_name must not be empty."
+    messaging, err = await run_messaging_page(page_id)
+    if err:
+        set_messaging_chat_loaded(page_id, False)
+        return err
+    try:
+        ok = await messaging.load_chat(user_name.strip())
+    except Exception as e:
+        logger.exception("load_messaging_chat failed page_id=%s", page_id)
+        set_messaging_chat_loaded(page_id, False)
+        return f"Failed: load_messaging_chat raised: {e}"
+    set_messaging_chat_loaded(page_id, ok)
+    return _linkedin_action_message("load_messaging_chat", ok)
+
+
+@mcp.tool
+async def send_messaging_message(page_id: str, message: str) -> str:
+    """
+    Types and sends a message in the LinkedIn compose box for ``page_id``.
+
+    Use when:
+    - ``load_messaging_chat`` has already succeeded for this ``page_id`` and the conversation is open
+
+    Parameters:
+    - page_id: Same tab handle used with ``load_messaging_chat``
+    - message: Outbound message body (non-empty)
+
+    Returns:
+    - Status string
+
+    Notes:
+    - If you have not loaded a chat on this tab, the tool returns an error instructing you to call ``load_messaging_chat`` first
+    - Requires an authenticated session (typically after ``login``)
+    """
+    gate_err = require_messaging_chat_loaded(page_id)
+    if gate_err:
+        return gate_err
+    if not (message or "").strip():
+        return "Failed: message must not be empty."
+    messaging, err = await run_messaging_page(page_id)
+    if err:
+        return err
+    try:
+        ok = await messaging.send_message(message.strip())
+    except Exception as e:
+        logger.exception("send_messaging_message failed page_id=%s", page_id)
+        return f"Failed: send_messaging_message raised: {e}"
+    return _linkedin_action_message("send_messaging_message", ok)
 
 
 if __name__ == "__main__":

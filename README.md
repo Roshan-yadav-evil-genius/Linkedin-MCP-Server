@@ -1,16 +1,16 @@
 # LinkedIn MCP
 
-**LinkedIn MCP** is a [Model Context Protocol](https://modelcontextprotocol.io/) server that connects an AI assistant to LinkedIn through a real browser session. The assistant can open pages, read what is on screen in plain text, run LinkedIn-focused actions (such as search and connection requests), and fall back to custom in-page actions when needed. Your sign-in state can be kept between sessions so repeat tasks do not always require logging in again.
+**LinkedIn MCP** is a [Model Context Protocol](https://modelcontextprotocol.io/) server that connects an AI assistant to LinkedIn through a real browser session. The assistant can open pages, read what is on screen in plain text, run LinkedIn-focused actions (such as search, connection requests, and messaging), and fall back to custom in-page actions when needed. Your sign-in state can be kept between sessions so repeat tasks do not always require logging in again.
 
 ## Who it is for
 
-This project suits individuals or teams who want an AI agent to help with LinkedIn workflows—for example finding people, narrowing lists with filters, reading result pages, or taking simple actions on a member’s profile—while a human handles sign-in when LinkedIn asks for it (password, second factor, or other checks).
+This project suits individuals or teams who want an AI agent to help with LinkedIn workflows—for example finding people, narrowing lists with filters, reading result pages, taking simple actions on a member’s profile, or sending a message after opening messaging—while a human handles sign-in when LinkedIn asks for it (password, second factor, or other checks).
 
 ## How the agent typically works
 
 1. **Sign in when needed** — The assistant can start an interactive sign-in flow. You complete authentication in the browser; when you close the window, the saved session is ready for later steps.
 2. **Work on a specific page** — The assistant opens a URL and receives a short-lived **tab reference** for that page. Most tools expect the right kind of LinkedIn page to be active on that tab (for example a person’s profile or people search results).
-3. **Act or read** — The assistant can run built-in LinkedIn actions (connect, follow, search, filters, pagination) or **read the current page as clean text** so it can reason over names, headlines, and snippets. For unusual layouts, it can run **custom actions inside the page** when the built-in tools are not enough.
+3. **Act or read** — The assistant can run built-in LinkedIn actions (connect, follow, search, filters, pagination, messaging) or **read the current page as clean text** so it can reason over names, headlines, and snippets. For unusual layouts, it can run **custom actions inside the page** when the built-in tools are not enough.
 4. **Close when finished** — The assistant can close tabs it no longer needs so work stays tidy.
 
 ## Capabilities
@@ -29,6 +29,11 @@ This project suits individuals or teams who want an AI agent to help with Linked
 - **Follow the member** — Subscribe to their public updates without necessarily connecting.
 - **Unfollow the member** — Stop following their updates.
 
+### Messaging (messaging URL must be the active tab)
+
+- **Load a chat by name** — On a LinkedIn messaging tab (for example starting a new conversation), search for a person’s name and open that thread so the compose area is ready.
+- **Send a message** — Type and send text in the open conversation. **Only use this after “load a chat” has succeeded on the same tab**; the server enforces that order so sends do not run against the wrong recipient or an empty compose state.
+
 ### People discovery and lists
 
 - **Search people (broad)** — Open LinkedIn people search for keywords such as title, company, or skills.
@@ -42,7 +47,7 @@ Search and filter tools **change what is on screen**; the assistant should **rea
 
 | Changes LinkedIn (mutating) | Reads only |
 |----------------------------|------------|
-| Send or withdraw a connection request; follow or unfollow | Read tab content as text |
+| Send or withdraw a connection request; follow or unfollow; load chat; send message | Read tab content as text |
 | Open people search or connections-scoped search | Use the same read step after the page loads |
 | Apply search filters; go to next or previous results page | |
 | Custom in-page actions that click, type, or submit | Custom in-page actions used only to gather text from the page |
@@ -55,6 +60,7 @@ Built-in search tools **open** the right view and return a message that includes
 2. **Connect from a profile** — Open the member’s profile, send a connection request with a short note you approve, or send without a note when appropriate.
 3. **Clean up an invitation** — Open the member’s profile and withdraw a pending request if plans change.
 4. **Stay in touch without connecting** — Open a profile and follow (or unfollow) public updates.
+5. **Message someone** — Open a messaging URL on a tab, load the chat for their name, then send your message on that same tab.
 
 ## Expectations and limits
 
