@@ -28,7 +28,10 @@ async def main():
         
         messaging_page = MessagingPage(page)
         await messaging_page.load_chat("Roshan")
-        await messaging_page.send_message("Hello, how are you?")
+        await messaging_page.send_message("Hey Roshan")
+        logger.info("Waiting for 2 seconds")
+        await asyncio.sleep(2)
+        await messaging_page.send_message("What are you doing?")
 
         await context.wait_for_event("close", timeout=0)
         await context.close()

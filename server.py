@@ -468,58 +468,79 @@ async def click_on_pagination_previous_button(page_id: str)->str:
 
 
 @mcp.tool
-async def load_messaging_chat(page_id: str, user_name: str) -> str:
+async def open_chat_window_of(user_name: str) -> str:
     """
-    Opens the conversation with a member by name on the LinkedIn messaging tab for ``page_id``.
+    Opens a **new** LinkedIn messaging tab, selects the recipient by name, and marks that tab as **chat-loaded** for this server session.
 
     Use when:
-    - The tab already shows LinkedIn messaging (for example ``/messaging/thread/new/`` or a thread URL)
-    - You need to select a recipient from the name search before sending a message
+    - You are starting (or switching to) a conversation with a specific person and need a ``page_id`` to send from
+    - You do **not** already have a loaded chat for this conversation on a tracked tab
+
+    Do **not** use this between every outbound message: once this tool succeeds, the chat stays loaded on the returned ``page_id`` until the tab is closed or the server restarts. Use ``send_messaging_message`` repeatedly with the **same** ``page_id`` for follow-up messages—no need to reload the chat or call this tool again for the same thread.
 
     Parameters:
-    - page_id: Tab handle from ``open_page``
     - user_name: Name to type in the messaging recipient search (must match a selectable result)
 
     Returns:
-    - Status string; on success you may call ``send_messaging_message`` on the same ``page_id``
+    - Message including a new ``page_id`` for the opened tab; on success, pass that ``page_id`` to ``send_messaging_message`` (one or many times)
 
     Notes:
+    - Does **not** take ``page_id``; opens a new tracked tab (same idea as ``search_people``)
     - Requires an authenticated session (typically after ``login``)
-    - Call ``send_messaging_message`` only after this tool succeeds for the same ``page_id``
+    - Call again only when you need a **new** tab or a **different** recipient selection, not to “refresh” before each send
     """
     if not (user_name or "").strip():
         return "Failed: user_name must not be empty."
+    url = "https://www.linkedin.com/messaging/thread/new/"
+    try:
+        page_id = await get_chrome_profile_manager().open_page(url)
+    except Exception as e:
+        logger.exception("open_chat_window_of open_page failed user_name=%r", user_name)
+        return f"Failed to open LinkedIn new message page: {e}"
     messaging, err = await run_messaging_page(page_id)
     if err:
         set_messaging_chat_loaded(page_id, False)
-        return err
+        return f"{err} page_id={page_id!r}. You may close this tab with close_page if it is not useful."
     try:
         ok = await messaging.load_chat(user_name.strip())
     except Exception as e:
-        logger.exception("load_messaging_chat failed page_id=%s", page_id)
+        logger.exception("open_chat_window_of failed page_id=%s", page_id)
         set_messaging_chat_loaded(page_id, False)
-        return f"Failed: load_messaging_chat raised: {e}"
+        return (
+            f"Failed: open_chat_window_of raised: {e} page_id={page_id!r}. "
+            "You may close this tab with close_page if it is not useful."
+        )
     set_messaging_chat_loaded(page_id, ok)
-    return _linkedin_action_message("load_messaging_chat", ok)
+    status = _linkedin_action_message("open_chat_window_of", ok)
+    if ok:
+        return (
+            f"{status} page_id={page_id!r}. "
+            "Use send_messaging_message with this page_id to send one or more messages without calling open_chat_window_of again."
+        )
+    return f"{status} page_id={page_id!r}."
 
 
 @mcp.tool
 async def send_messaging_message(page_id: str, message: str) -> str:
     """
-    Types and sends a message in the LinkedIn compose box for ``page_id``.
+    Sends **one** message in the compose box for a tab where the chat is **already loaded**.
 
     Use when:
-    - ``load_messaging_chat`` has already succeeded for this ``page_id`` and the conversation is open
+    - ``open_chat_window_of`` has already succeeded for this ``page_id`` (the server remembers that the chat is loaded)
+    - You want to send the first message **or** any additional message in the same conversation
+
+    You may call this tool **multiple times** with the **same** ``page_id`` for back-and-forth outbound messages. **Do not** call ``open_chat_window_of`` again before each send—the chat does not need to be reloaded between sends on the same tab.
 
     Parameters:
-    - page_id: Same tab handle used with ``load_messaging_chat``
+    - page_id: The ``page_id`` returned by a successful ``open_chat_window_of`` (not from ``open_page`` alone)
     - message: Outbound message body (non-empty)
 
     Returns:
     - Status string
 
     Notes:
-    - If you have not loaded a chat on this tab, the tool returns an error instructing you to call ``load_messaging_chat`` first
+    - If this ``page_id`` was never successfully opened with ``open_chat_window_of``, the tool errors; fix by running ``open_chat_window_of`` once, then retry sends with the returned ``page_id``
+    - Does not reload the thread or wait for a fresh “new thread” page; it assumes the compose UI is already valid for this tab
     - Requires an authenticated session (typically after ``login``)
     """
     gate_err = require_messaging_chat_loaded(page_id)
@@ -527,7 +548,7 @@ async def send_messaging_message(page_id: str, message: str) -> str:
         return gate_err
     if not (message or "").strip():
         return "Failed: message must not be empty."
-    messaging, err = await run_messaging_page(page_id)
+    messaging, err = await run_messaging_page(page_id, wait_for_ready=False)
     if err:
         return err
     try:

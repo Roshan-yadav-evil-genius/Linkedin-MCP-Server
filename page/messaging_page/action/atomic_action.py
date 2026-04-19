@@ -50,6 +50,7 @@ class FillMessageInput(PageUtility, BaseAtomicAction):
         self.message = message
 
     async def perform_action(self) -> None:
+        await self.messaging.message_input().click()
         await human_typing(
             self.messaging.message_input(),
             self.message,

@@ -29,10 +29,10 @@ This project suits individuals or teams who want an AI agent to help with Linked
 - **Follow the member** — Subscribe to their public updates without necessarily connecting.
 - **Unfollow the member** — Stop following their updates.
 
-### Messaging (messaging URL must be the active tab)
+### Messaging
 
-- **Load a chat by name** — On a LinkedIn messaging tab (for example starting a new conversation), search for a person’s name and open that thread so the compose area is ready.
-- **Send a message** — Type and send text in the open conversation. **Only use this after “load a chat” has succeeded on the same tab**; the server enforces that order so sends do not run against the wrong recipient or an empty compose state.
+- **Open chat window of (by name)** — Opens a new messaging tab (new conversation), searches for a person’s name, opens that thread, and returns a **tab reference** (tool name: ``open_chat_window_of``; you do not open messaging yourself first).
+- **Send a message** — Type and send text using the tab reference returned by ``open_chat_window_of``. **Only use this after that tool has succeeded**; the server enforces that order so sends do not run against the wrong recipient or an empty compose state.
 
 ### People discovery and lists
 
@@ -47,7 +47,7 @@ Search and filter tools **change what is on screen**; the assistant should **rea
 
 | Changes LinkedIn (mutating) | Reads only |
 |----------------------------|------------|
-| Send or withdraw a connection request; follow or unfollow; load chat; send message | Read tab content as text |
+| Send or withdraw a connection request; follow or unfollow; open chat window; send message | Read tab content as text |
 | Open people search or connections-scoped search | Use the same read step after the page loads |
 | Apply search filters; go to next or previous results page | |
 | Custom in-page actions that click, type, or submit | Custom in-page actions used only to gather text from the page |
@@ -60,7 +60,7 @@ Built-in search tools **open** the right view and return a message that includes
 2. **Connect from a profile** — Open the member’s profile, send a connection request with a short note you approve, or send without a note when appropriate.
 3. **Clean up an invitation** — Open the member’s profile and withdraw a pending request if plans change.
 4. **Stay in touch without connecting** — Open a profile and follow (or unfollow) public updates.
-5. **Message someone** — Open a messaging URL on a tab, load the chat for their name, then send your message on that same tab.
+5. **Message someone** — Open the chat window for their name (``open_chat_window_of`` opens a new messaging tab and returns a tab reference), then send your message using that same reference.
 
 ## Expectations and limits
 

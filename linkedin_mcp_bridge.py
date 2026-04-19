@@ -13,7 +13,7 @@ from page.search_page.action.page_action import SearchPage
 
 logger = logging.getLogger(__name__)
 
-# page_id -> True after load_messaging_chat succeeds; required before send_messaging_message.
+# page_id -> True after open_chat_window_of succeeds; required before send_messaging_message.
 _messaging_chat_loaded: dict[str, bool] = {}
 
 
@@ -28,8 +28,8 @@ def require_messaging_chat_loaded(page_id: str) -> str | None:
     if _messaging_chat_loaded.get(page_id):
         return None
     return (
-        "No chat loaded for this tab. Call load_messaging_chat with this page_id first "
-        "(after opening a LinkedIn messaging URL, for example a new conversation)."
+        "No chat loaded for this tab. Call open_chat_window_of first (it opens a new tab and returns "
+        "page_id), then use that same page_id with send_messaging_message."
     )
 
 
@@ -82,9 +82,15 @@ async def run_search_page(page_id: str) -> Tuple[SearchPage | None, str | None]:
     return search, None
 
 
-async def run_messaging_page(page_id: str) -> Tuple[MessagingPage | None, str | None]:
+async def run_messaging_page(
+    page_id: str, *, wait_for_ready: bool = True
+) -> Tuple[MessagingPage | None, str | None]:
     """
-    Return ``(MessagingPage, None)`` after load wait, or ``(None, error)`` if resolve/URL/load fails.
+    Return ``(MessagingPage, None)`` or ``(None, error)`` if resolve/URL validation fails.
+
+    When ``wait_for_ready`` is True (default), waits for initial messaging UI (new thread or
+    compose). Use False for steps that run only after a chat is already loaded (for example
+    ``send_messaging_message``), so a full page-ready wait does not block on an active thread.
     """
     resolved = resolve_tracked_page(page_id)
     if isinstance(resolved, str):
@@ -95,6 +101,8 @@ async def run_messaging_page(page_id: str) -> Tuple[MessagingPage | None, str | 
             "This tab is not a LinkedIn messaging URL. "
             "Use open_page with a messaging URL (for example a new message thread) first."
         )
+    if not wait_for_ready:
+        return messaging, None
     try:
         await messaging.wait_for_page_to_load()
     except Exception as e:

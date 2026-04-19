@@ -20,6 +20,7 @@ class PageUtility:
         return "/messaging/" in self.page_url
 
     async def wait_for_page_to_load(self) -> None:
-        ready = self.messaging.search_profile_input().or_(self.messaging.message_input())
-        await expect(ready).to_be_visible(timeout=20_000)
+        # New-thread UI shows both recipient combobox and compose box; OR-ing them
+        # makes a single locator match two nodes and fails Playwright strict mode.
+        await expect(self.messaging.search_profile_input()).to_be_visible(timeout=20_000)
         logger.info("Messaging page loaded successfully")
