@@ -26,5 +26,3 @@ class Filter(BaseModel):
                     "Restricts results to people who follow this person. "
                     "Useful for targeting audience of a specific influencer or company leader."
     )
-
-print(Filter().model_dump_json())
