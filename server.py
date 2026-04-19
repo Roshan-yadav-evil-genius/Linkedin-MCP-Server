@@ -1,28 +1,56 @@
+import json
+import logging
+
 from fastmcp import FastMCP
+
+from chrome_profile_manager import PageNotFoundError, get_chrome_profile_manager
 from page.search_page.action.types import Filter
+from utils import html_to_markdown
 
 mcp = FastMCP("LinkedInMCP")
+logger = logging.getLogger(__name__)
+
+
+def _serialize_eval_result(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, default=str)
+    except TypeError:
+        return str(value)
 
 # ============================================================= [ General Browser Tools ] =============================================================
 @mcp.tool
-async def login()->str:
+async def login(start_url: str = "about:blank") -> str:
     """
-    Opens a persistent Chromium browser for manual user login and saves the authenticated session.
+    Launch a visible (non-headless) persistent Chromium session for **manual authentication**.
 
-    Use when:
-    - You need the user to log in to a website (e.g., LinkedIn)
-    - Future tools require an authenticated session
+    Use this when:
+    - A target page is **behind login/authentication**
+    - Automation fails due to **missing/expired session**
+    - Human interaction (OTP, CAPTCHA, SSO) is required
 
-    Flow:
-    - Opens browser → user logs in → user closes browser → session is saved
+    What it does:
+    - Opens a real browser using the persistent profile (cookies will be saved)
+    - Optionally navigates to `start_url`
+    - Waits until the user **closes the browser window**
+    - Saves all session data for future automated steps
 
-    Notes:
-    - Requires manual user interaction
-    - Blocks until browser is closed
-    - Must be executed before any authenticated actions
+    After completion:
+    - Subsequent tools (e.g., `open_page`, `run_javascript`) will run with the **authenticated session**
+
+    Parameters:
+    - start_url: URL to begin login (default: "about:blank")
+
+    Important:
+    - This call **blocks** until the browser is closed
+    - No `page_id` is returned
+    - Do NOT call other browser tools while this is running
+    - Ensure no active pages exist before calling (close them if needed)
     """
-    pass
-
+    await get_chrome_profile_manager().run_interactive_profile_session(start_url=start_url)
+    return "Login session completed. Authenticated state saved and ready for automation."
+    
 
 @mcp.tool
 async def open_page(url: str)->str:
@@ -43,7 +71,7 @@ async def open_page(url: str)->str:
     - Page IDs are stored in memory only (lost on server restart)
     - Must be called before `run_javascript` or other tools that require `page_id`
     """
-    pass
+    return await get_chrome_profile_manager().open_page(url)
 
 @mcp.tool
 async def close_page(page_id: str)->str:
@@ -60,7 +88,7 @@ async def close_page(page_id: str)->str:
     Returns:
     - Status string indicating whether the page was closed or not found
     """
-    pass
+    return await get_chrome_profile_manager().close_page(page_id)
 
 @mcp.tool
 async def get_page_content(page_id: str) -> str:
@@ -82,7 +110,17 @@ async def get_page_content(page_id: str) -> str:
     - Reflects the current DOM state (after JS/rendering)
     - Excludes hidden elements, scripts, and styles
     """
-    pass
+    manager = get_chrome_profile_manager()
+    try:
+        page = manager.get_page(page_id)
+    except PageNotFoundError:
+        return f"Unknown or closed page_id: {page_id!r}."
+    try:
+        content = await page.content()
+        return html_to_markdown(content)
+    except Exception as e:
+        logger.exception("get_page_content failed for page_id=%s", page_id)
+        return f"Failed to read page content: {e}"
 
 @mcp.tool
 async def run_javascript(page_id: str, script: str) -> str:
@@ -106,7 +144,17 @@ async def run_javascript(page_id: str, script: str) -> str:
     - The script should explicitly `return` a value
     - Fails if `page_id` is invalid or page is closed
     """
-    pass
+    manager = get_chrome_profile_manager()
+    try:
+        page = manager.get_page(page_id)
+    except PageNotFoundError:
+        return f"Unknown or closed page_id: {page_id!r}."
+    try:
+        result = await page.evaluate(script)
+    except Exception as e:
+        logger.exception("run_javascript failed for page_id=%s", page_id)
+        return f"JavaScript error: {e}"
+    return _serialize_eval_result(result)
 
 # ============================================================= [ LinkedIn Specific Tools ] =============================================================
 
