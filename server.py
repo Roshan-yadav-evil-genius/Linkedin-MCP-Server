@@ -33,34 +33,25 @@ def _serialize_eval_result(value: object) -> str:
     except TypeError:
         return str(value)
 
+# Agent-facing tool docstrings: one-line summary, when to use (bullets), requirements,
+# then outcome / next step. Say "get_page_content" when the agent should read the tab.
 # ============================================================= [ General Browser Tools ] =============================================================
 @mcp.tool
 async def login(start_url: str = "about:blank") -> str:
     """
-    Launch a visible (non-headless) persistent Chromium session for **manual authentication**.
+    Opens a real browser window so a human can sign in (or refresh a LinkedIn session); when they
+    close the window, cookies and session data are saved for later tool calls.
 
-    Use this when:
-    - A target page is **behind login/authentication**
-    - Automation fails due to **missing/expired session**
-    - Human interaction (OTP, CAPTCHA, SSO) is required
+    When to use:
+    - LinkedIn needs a password, 2FA, CAPTCHA, SSO, or similar and automated steps are not signed in.
+    - Session looks expired and other tools fail until someone logs in again.
 
-    What it does:
-    - Opens a real browser using the persistent profile (cookies will be saved)
-    - Optionally navigates to `start_url`
-    - Waits until the user **closes the browser window**
-    - Saves all session data for future automated steps
+    Requirements:
+    - Close extra automated tabs first if your setup needs a clean slate.
+    - Optional `start_url` (default `about:blank`) is where the window first loads.
 
-    After completion:
-    - Subsequent tools (e.g., `open_page`, `run_javascript`) will run with the **authenticated session**
-
-    Parameters:
-    - start_url: URL to begin login (default: "about:blank")
-
-    Important:
-    - This call **blocks** until the browser is closed
-    - No `page_id` is returned
-    - Do NOT call other browser tools while this is running
-    - Ensure no active pages exist before calling (close them if needed)
+    Blocking: waits until the browser window is closed; do not run other tools in parallel. No
+    `page_id` is returned. Afterward use `open_page` or LinkedIn tools as usual.
     """
     await get_chrome_profile_manager().run_interactive_profile_session(start_url=start_url)
     return "Login session completed. Authenticated state saved and ready for automation."
@@ -69,60 +60,45 @@ async def login(start_url: str = "about:blank") -> str:
 @mcp.tool
 async def open_page(url: str)->str:
     """
-    Opens a webpage in a long-lived browser page and returns a `page_id`.
+    Opens a URL in the managed browser and returns a `page_id` for that tab.
 
-    Use when:
-    - You need to run multiple JavaScript operations on the same page
-    - You want to preserve page state (DOM/session/cookies) between tool calls
+    When to use:
+    - You need a stable tab to read with `get_page_content`, run `run_javascript`, or pass into a LinkedIn tool that requires `page_id`.
 
-    Parameters:
-    - url: Target page URL to open
+    Requirements:
+    - Working browser profile; use `login` when LinkedIn still needs a human sign-in.
 
-    Returns:
-    - page_id: In-memory identifier required by `get_page_content`, `run_javascript`, `close_page`, and LinkedIn tools that take `page_id`
-
-    Notes:
-    - Page IDs are stored in memory only (lost on server restart)
-    - Must be called before `run_javascript` or other tools that require `page_id`
+    Next: keep the returned `page_id` until you call `close_page` or the server restarts (ids are in-memory only).
     """
     return await get_chrome_profile_manager().open_page(url)
 
 @mcp.tool
 async def close_page(page_id: str)->str:
     """
-    Closes a page opened by `open_page` and releases its in-memory handle.
+    Closes the browser tab for `page_id` and removes the server’s handle.
 
-    Use when:
-    - You are done with a page opened by `open_page`
-    - You want to avoid accumulating open tabs/pages
+    When to use:
+    - The tab is finished or you want to avoid too many open tabs.
 
-    Parameters:
-    - page_id: Identifier returned by `open_page`
+    Requirements:
+    - `page_id` from `open_page`, `search_people`, `search_person_in_my_connections`, or `open_chat_window_of`.
 
-    Returns:
-    - Status string indicating whether the page was closed or not found
+    Returns a short message (closed, or unknown/closed id).
     """
     return await get_chrome_profile_manager().close_page(page_id)
 
 @mcp.tool
 async def get_page_content(page_id: str) -> str:
     """
-    Extracts and returns the current page content as clean Markdown.
+    Returns what is visibly on the page as Markdown (names, headlines, search rows, etc.).
 
-    Use when:
-    - You need to read or analyze the visible content of a page
-    - You want structured text for LLM processing (instead of raw HTML)
+    When to use:
+    - After navigation, search, filters, pagination, or any time you need to see the current screen.
 
-    Parameters:
-    - page_id: Identifier returned by `open_page`
+    Requirements:
+    - `page_id` for an open tab from `open_page` or a tool that opens a new tab.
 
-    Returns:
-    - Markdown string of the page’s visible content
-
-    Notes:
-    - Only works on pages opened via `open_page`
-    - Reflects the current DOM state (after JS/rendering)
-    - Excludes hidden elements, scripts, and styles
+    If the id is invalid you get an error string; otherwise you get readable Markdown (noise like scripts and hidden bits is dropped).
     """
     manager = get_chrome_profile_manager()
     try:
@@ -139,24 +115,15 @@ async def get_page_content(page_id: str) -> str:
 @mcp.tool
 async def run_javascript(page_id: str, script: str) -> str:
     """
-    Executes JavaScript in the context of a previously opened page and returns the result.
+    Runs your script inside the open tab and returns its result as text (escape hatch when no dedicated tool fits).
 
-    Use when:
-    - You need to interact with the DOM (click, type, extract data, etc.)
-    - You want to run custom logic directly inside the page
+    When to use:
+    - A one-off click, read, or small automation is needed and there is no named LinkedIn tool for it.
 
-    Parameters:
-    - page_id: Identifier returned by `open_page`
-    - script: JavaScript code to execute (must return a value)
+    Requirements:
+    - Valid `page_id`. The script must `return` a value so the tool has something to send back.
 
-    Returns:
-    - Result of the executed script (serialized to string)
-
-    Notes:
-    - Runs using Playwright `page.evaluate`
-    - Has access to the live DOM and browser APIs
-    - The script should explicitly `return` a value
-    - Fails if `page_id` is invalid or page is closed
+    Prefer the built-in LinkedIn tools when they match the task. Errors look like `JavaScript error: ...` or an unknown `page_id` message.
     """
     manager = get_chrome_profile_manager()
     try:
@@ -178,22 +145,17 @@ async def run_javascript(page_id: str, script: str) -> str:
 @mcp.tool
 async def send_connection_request(page_id: str, note: str = "")->str:
     """
-    Sends a LinkedIn connection request to the member whose profile is loaded in the tab for `page_id`.
+    Sends a connection invite to the person whose LinkedIn profile is open on `page_id`.
 
-    Use when:
-    - The user wants to connect with this specific person
-    - The visible page is that person’s profile (not search results or feed)
+    When to use:
+    - The user wants to connect with this person and their profile page is already loaded.
 
-    Parameters:
-    - page_id: Tab handle from `open_page`; must already show the target member’s profile URL
-    - note: Optional personalized message (empty string means send without a note, if the UI allows)
+    Requirements:
+    - Tab must be that member’s profile URL (use `open_page` on their profile first). Signed-in session.
+    - LinkedIn may refuse if you are already connected, a request is pending, or limits apply.
 
-    Returns:
-    - Status or outcome string (implementation-defined)
-
-    Notes:
-    - Requires an authenticated session (typically after `login`)
-    - May no-op or error if already connected, invite pending, or LinkedIn limits apply
+    Reply text is `Success: send_connection_request completed.` or `Failed: send_connection_request did not complete or verify. ...`.
+    Use an empty `note` to try sending without a message when the site allows it.
     """
     profile, err = await run_profile_page(page_id)
     if err:
@@ -209,22 +171,15 @@ async def send_connection_request(page_id: str, note: str = "")->str:
 @mcp.tool
 async def withdraw_connection_request(page_id: str)->str:
     """
-    Withdraws your pending outbound connection request for the member whose profile is loaded in the tab for `page_id`.
+    Withdraws your pending connection request to the person whose profile is open on `page_id`.
 
-    Use when:
-    - The user previously sent a request and wants to cancel it before it is accepted
-    - The profile shows a pending invitation from you
+    When to use:
+    - The user wants to cancel an outbound invite before it is accepted.
 
-    Parameters:
-    - page_id: Tab handle from `open_page`; must already show that member’s profile
+    Requirements:
+    - Profile URL on that tab; signed in. No pending invite means the action may fail or do nothing.
 
-    Returns:
-    - Status or outcome string (implementation-defined)
-
-    Notes:
-    - Requires an authenticated session (typically after `login`)
-    - Use `send_connection_request` to send a new request, not this tool
-    - Fails or no-ops if there is no pending request to withdraw
+    Reply uses `Success: withdraw_connection_request completed.` or the matching `Failed: ...` line. To invite again later, use `send_connection_request`.
     """
     profile, err = await run_profile_page(page_id)
     if err:
@@ -239,21 +194,15 @@ async def withdraw_connection_request(page_id: str)->str:
 @mcp.tool
 async def follow_profile(page_id: str)->str:
     """
-    Follows the member whose profile is loaded in the tab for `page_id` (subscribe to their public updates).
+    Follows the person so you see their public updates, without requiring a connection.
 
-    Use when:
-    - The user wants to follow this person without necessarily sending a connection request
-    - The visible page is that person’s profile
+    When to use:
+    - The user wants to follow this member from their profile page.
 
-    Parameters:
-    - page_id: Tab handle from `open_page`; must already show the target member’s profile
+    Requirements:
+    - Their profile URL on `page_id`; signed in. Already following or missing controls can make this a no-op or failure.
 
-    Returns:
-    - Status or outcome string (implementation-defined)
-
-    Notes:
-    - Requires an authenticated session (typically after `login`)
-    - May no-op if already following or if the control is not available
+    Reply uses `Success: follow_profile completed.` or `Failed: follow_profile ...`.
     """
     profile, err = await run_profile_page(page_id)
     if err:
@@ -268,21 +217,15 @@ async def follow_profile(page_id: str)->str:
 @mcp.tool
 async def unfollow_profile(page_id: str)->str:
     """
-    Unfollows the member whose profile is loaded in the tab for `page_id`.
+    Stops following the person whose profile is open on `page_id`.
 
-    Use when:
-    - The user wants to stop following this person’s updates
-    - The visible page is that person’s profile
+    When to use:
+    - The user no longer wants this member’s updates in their feed from this action.
 
-    Parameters:
-    - page_id: Tab handle from `open_page`; must already show the target member’s profile
+    Requirements:
+    - Profile URL on that tab; signed in. Not following them can mean a no-op or failure.
 
-    Returns:
-    - Status or outcome string (implementation-defined)
-
-    Notes:
-    - Requires an authenticated session (typically after `login`)
-    - May no-op if not currently following
+    Reply uses `Success: unfollow_profile completed.` or `Failed: unfollow_profile ...`.
     """
     profile, err = await run_profile_page(page_id)
     if err:
@@ -299,23 +242,15 @@ async def unfollow_profile(page_id: str)->str:
 @mcp.tool
 async def search_people(query: str)->str:
     """
-    Runs a LinkedIn **people** search for the given keywords (global search, not limited to your connections list).
+    Opens LinkedIn people search for keywords across the whole network (not limited to people you already know).
 
-    Use when:
-    - You need to find candidates by title, company, skills, or other keywords
-    - You will refine results later with `apply_filters` on a people-search tab opened via `open_page`
+    When to use:
+    - Finding candidates by title, company, skills, or other search words.
 
-    Parameters:
-    - query: Search string as the user would type in LinkedIn people search
+    Requirements:
+    - Signed in for full results.
 
-    Returns:
-    - Message including a new `page_id` for the opened people-search tab (use with `get_page_content` and `apply_filters`)
-
-    Notes:
-    - This signature does **not** take `page_id`; it opens a new tracked tab via the same browser session as `open_page`
-    - For **facet filters** (degrees, connections of, followers of), open the people search results in a tab with `open_page`, pass that `page_id` to `apply_filters`, and ensure the UI shows the All filters / results view expected by automation
-    - Requires an authenticated session for full results (typically after `login`)
-    - This tool only drives the browser; it does not return the results body. After the page has updated, call `get_page_content` with the tab’s `page_id` so the agent receives the current view as Markdown
+    Opens a new tab and returns text that includes a fresh `page_id`. Save it, then call `get_page_content` to read who appears. Use `apply_filters` on that same `page_id` when you need degree or “connections of / followers of” style filters.
     """
     url = (
         "https://www.linkedin.com/search/results/people/"
@@ -334,23 +269,15 @@ async def search_people(query: str)->str:
 @mcp.tool
 async def search_person_in_my_connections(query: str)->str:
     """
-    Searches **within your existing LinkedIn connections** (or the product flow that lists “my connections”) for a name or keyword.
+    Opens people search narrowed to your first-degree network so you can find someone you are already connected to.
 
-    Use when:
-    - The user wants to find someone they are already connected to
-    - Narrowing to first-degree network, not open LinkedIn-wide people discovery
+    When to use:
+    - The user is looking up a connection by name or keyword, not doing a broad talent search.
 
-    Parameters:
-    - query: Name or keyword to match within the connections search experience
+    Requirements:
+    - Signed in.
 
-    Returns:
-    - Message including a new `page_id` for the opened tab (1st-degree network filter on people search)
-
-    Notes:
-    - Contrast with `search_people`, which targets broader people search
-    - Requires an authenticated session (typically after `login`)
-    - Exact navigation (My Network → Connections vs other entry points) is implementation-defined
-    - This tool only drives the browser; it does not return the results body. After the page has updated, call `get_page_content` with the tab’s `page_id` so the agent receives the current view as Markdown
+    Contrast: `search_people` is the wide search; this one is scoped to direct connections. Returns a new `page_id` in the message—call `get_page_content` on it to read the list.
     """
     # https://www.linkedin.com/search/results/people/?keywords=hr&origin=GLOBAL_SEARCH_HEADER&network=%5B%22F%22%5D
     # First-degree network facet on people search (approximates “my connections” discovery).
@@ -373,27 +300,16 @@ async def search_person_in_my_connections(query: str)->str:
 @mcp.tool
 async def apply_filters(page_id: str, filter: Filter)->str:
     """
-    Opens or uses the LinkedIn **people search** filter UI for the tab `page_id` and applies the structured criteria in `filter` (connection degrees, connections-of, followers-of).
+    Applies people-search filters on the tab that already shows LinkedIn people search (degrees, connections of, followers of).
 
-    Use when:
-    - The tab already shows LinkedIn **people search results** (or the filter panel for that search)
-    - You need to restrict by 1st/2nd/3rd degree, “connections of”, or “followers of” before viewing updated results
+    When to use:
+    - You have a people results tab and need to narrow who appears before reading or paging.
 
-    Parameters:
-    - page_id: Tab handle from `open_page`; must be on the people search / filters context automation expects
-    - filter: Pydantic model with:
-        - degree: list of 1, 2, and/or 3 (first-, second-, third-degree); semantics align with LinkedIn’s network filters
-        - connection_of: optional full name to restrict to people connected to that member (if supported in UI)
-        - followers_of: optional full name to restrict to people who follow that member (if supported in UI)
+    Requirements:
+    - `page_id` must be people search (for example from `search_people` or `open_page` to a people-search URL). Signed in.
+    - Build `filter` from the schema: each field has a short description there.
 
-    Returns:
-    - Status or outcome string (implementation-defined); may imply confirming “Show results” in the UI
-
-    Notes:
-    - Requires an authenticated session (typically after `login`)
-    - Call after the people search page for this `page_id` is ready; often used after `search_people` once a stable tab exists, or after `open_page` to a people search URL
-    - Field-level descriptions also live on the `Filter` model in code (`page/search_page/action/types.py`)
-    - This tool only mutates the page; it does not return updated results. After filters are applied and the results view has refreshed, call `get_page_content(page_id)` so the agent reads the new state as Markdown
+    Does not return the result list. After the tool responds, call `get_page_content` with the same `page_id`. Reply text follows `Success: apply_filters completed.` or `Failed: apply_filters ...`.
     """
     search, err = await run_search_page(page_id)
     if err:
@@ -408,22 +324,15 @@ async def apply_filters(page_id: str, filter: Filter)->str:
 @mcp.tool
 async def click_on_pagination_next_button(page_id: str)->str:
     """
-    Clicks the **next** control on LinkedIn **people search results** pagination for the tab `page_id`.
+    Goes to the next page of LinkedIn people search results for the same query and filters.
 
-    Use when:
-    - The user wants the following page of results for the same query and filters
-    - More results exist and the next control is visible
+    When to use:
+    - More results exist and you need the following page.
 
-    Parameters:
-    - page_id: Tab handle from `open_page`; must already show people search results with pagination
+    Requirements:
+    - `page_id` on people search with pagination showing; signed in.
 
-    Returns:
-    - Status or outcome string (implementation-defined)
-
-    Notes:
-    - Requires an authenticated session (typically after `login`)
-    - Does not change the query; only moves within paginated results
-    - After the next page loads, call `get_page_content(page_id)` so the agent receives the updated results as Markdown
+    Does not change the search words—only the page index. Then call `get_page_content` to read the new screen. Reply uses `Success: click_on_pagination_next_button completed.` or `Failed: ...`.
     """
     search, err = await run_search_page(page_id)
     if err:
@@ -438,21 +347,15 @@ async def click_on_pagination_next_button(page_id: str)->str:
 @mcp.tool
 async def click_on_pagination_previous_button(page_id: str)->str:
     """
-    Clicks the **previous** control on LinkedIn **people search results** pagination for the tab `page_id`.
+    Goes back one page in LinkedIn people search results.
 
-    Use when:
-    - The user wants the prior page of results
-    - The previous control is visible
+    When to use:
+    - You moved forward with `click_on_pagination_next_button` and need the prior results page.
 
-    Parameters:
-    - page_id: Tab handle from `open_page`; must already show people search results with pagination
+    Requirements:
+    - People search tab with a visible previous control; signed in.
 
-    Returns:
-    - Status or outcome string (implementation-defined)
-
-    Notes:
-    - Requires an authenticated session (typically after `login`)
-    - After the previous page loads, call `get_page_content(page_id)` so the agent receives the updated results as Markdown
+    Then call `get_page_content` to read the list. Reply uses `Success: click_on_pagination_previous_button completed.` or `Failed: ...`.
     """
     search, err = await run_search_page(page_id)
     if err:
@@ -470,24 +373,19 @@ async def click_on_pagination_previous_button(page_id: str)->str:
 @mcp.tool
 async def open_chat_window_of(user_name: str) -> str:
     """
-    Opens a **new** LinkedIn messaging tab, selects the recipient by name, and marks that tab as **chat-loaded** for this server session.
+    Run this before `send_messaging_message` for a new recipient: opens a new messaging tab, picks the person by name, and tells the server this tab is allowed to send.
 
-    Use when:
-    - You are starting (or switching to) a conversation with a specific person and need a ``page_id`` to send from
-    - You do **not** already have a loaded chat for this conversation on a tracked tab
+    Ordering and reuse:
+    - Call once when starting (or deliberately switching) a recipient. Reuse the returned `page_id` for every later message to the same person—do not call this again before each send.
+    - `user_name` must be non-empty and should match someone you can select from LinkedIn’s recipient search.
 
-    Do **not** use this between every outbound message: once this tool succeeds, the chat stays loaded on the returned ``page_id`` until the tab is closed or the server restarts. Use ``send_messaging_message`` repeatedly with the **same** ``page_id`` for follow-up messages—no need to reload the chat or call this tool again for the same thread.
+    When to use:
+    - You need a `page_id` that is cleared for messaging to that person.
 
-    Parameters:
-    - user_name: Name to type in the messaging recipient search (must match a selectable result)
+    Requirements:
+    - Signed in. This tool opens a new tab; it does not take an existing `page_id`.
 
-    Returns:
-    - Message including a new ``page_id`` for the opened tab; on success, pass that ``page_id`` to ``send_messaging_message`` (one or many times)
-
-    Notes:
-    - Does **not** take ``page_id``; opens a new tracked tab (same idea as ``search_people``)
-    - Requires an authenticated session (typically after ``login``)
-    - Call again only when you need a **new** tab or a **different** recipient selection, not to “refresh” before each send
+    The response includes `page_id` on success; pass that same id into `send_messaging_message` one or many times. Call again only for another tab or another recipient.
     """
     if not (user_name or "").strip():
         return "Failed: user_name must not be empty."
@@ -523,25 +421,19 @@ async def open_chat_window_of(user_name: str) -> str:
 @mcp.tool
 async def send_messaging_message(page_id: str, message: str) -> str:
     """
-    Sends **one** message in the compose box for a tab where the chat is **already loaded**.
+    Sends one outbound message in the compose box for a tab that `open_chat_window_of` already succeeded on.
 
-    Use when:
-    - ``open_chat_window_of`` has already succeeded for this ``page_id`` (the server remembers that the chat is loaded)
-    - You want to send the first message **or** any additional message in the same conversation
+    Ordering (read first):
+    - If you see “No chat loaded for this tab…”, run `open_chat_window_of` once, then send using the `page_id` it returned.
+    - Send the first line and every follow-up by calling this tool again with the same `page_id`; do not reopen the chat between sends.
 
-    You may call this tool **multiple times** with the **same** ``page_id`` for back-and-forth outbound messages. **Do not** call ``open_chat_window_of`` again before each send—the chat does not need to be reloaded between sends on the same tab.
+    When to use:
+    - Any message in that loaded thread, including the very first line after the chat is open.
 
-    Parameters:
-    - page_id: The ``page_id`` returned by a successful ``open_chat_window_of`` (not from ``open_page`` alone)
-    - message: Outbound message body (non-empty)
+    Requirements:
+    - Signed in. `message` must contain real text (whitespace-only is rejected).
 
-    Returns:
-    - Status string
-
-    Notes:
-    - If this ``page_id`` was never successfully opened with ``open_chat_window_of``, the tool errors; fix by running ``open_chat_window_of`` once, then retry sends with the returned ``page_id``
-    - Does not reload the thread or wait for a fresh “new thread” page; it assumes the compose UI is already valid for this tab
-    - Requires an authenticated session (typically after ``login``)
+    Reply uses `Success: send_messaging_message completed.` or `Failed: send_messaging_message ...`. It does not reopen or reset the thread UI.
     """
     gate_err = require_messaging_chat_loaded(page_id)
     if gate_err:
