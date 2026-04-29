@@ -199,19 +199,21 @@ async def linkedin_run_javascript(script: str, ctx: Context = CurrentContext()) 
 async def linkedin_send_connection_request(
     profile_url: str,
     note: str = "",
+    withdraw: bool = False,
     ctx: Context = CurrentContext(),
 ) -> str:
     """
-    Send a LinkedIn connection invite to a member.
+    Send a connection invite, or withdraw a pending invite you already sent.
 
     Use when:
-    - The user wants to connect with this person.
+    - The user wants to connect with this person, or cancel an outbound invite before it is accepted.
 
     Args:
     - `profile_url`: Their profile URL.
-    - `note`: Optional invite note; empty for no note when allowed.
+    - `note`: Optional invite message when sending (ignored when `withdraw` is True).
+    - `withdraw`: False (default) = send invite; True = withdraw pending invite.
 
-    Needs: logged in. LinkedIn may refuse duplicates, limits, or pending states.
+    Needs: logged in. LinkedIn may refuse duplicates, limits, or missing pending invite.
     """
     page = await browser.get_page(ctx.session_id)
     try:
@@ -228,7 +230,10 @@ async def linkedin_send_connection_request(
         logger.exception("linkedin_send_connection_request wait failed session_id=%s", ctx.session_id)
         return f"Profile page did not become ready in time: {e}"
     try:
-        ok = await profile.send_connection_request(note=note)
+        if withdraw:
+            ok = await profile.withdraw_connection_request()
+        else:
+            ok = await profile.send_connection_request(note=note)
     except Exception as e:
         logger.exception("linkedin_send_connection_request failed session_id=%s", ctx.session_id)
         return f"Failed: linkedin_send_connection_request raised: {e}"
@@ -236,56 +241,20 @@ async def linkedin_send_connection_request(
 
 
 @mcp.tool
-async def linkedin_withdraw_connection_request(
-    profile_url: str,
-    ctx: Context = CurrentContext(),
-) -> str:
-    """
-    Withdraw a pending connection invite you sent to this member.
-
-    Use when:
-    - The user wants to cancel an outbound invite before it is accepted.
-
-    Args:
-    - `profile_url`: Their profile URL.
-
-    Needs: logged in; no pending invite may mean nothing happens.
-    """
-    page = await browser.get_page(ctx.session_id)
-    try:
-        await page.goto(profile_url, wait_until="load")
-    except Exception as e:
-        logger.exception("linkedin_withdraw_connection_request goto failed session_id=%s", ctx.session_id)
-        return f"Failed to open profile URL: {e}"
-    profile = ProfilePage(page)
-    if not profile.is_valid_page():
-        return "This tab is not a LinkedIn profile URL. Use a valid member profile URL."
-    try:
-        await profile.wait_for_page_to_load()
-    except Exception as e:
-        logger.exception("linkedin_withdraw_connection_request wait failed session_id=%s", ctx.session_id)
-        return f"Profile page did not become ready in time: {e}"
-    try:
-        ok = await profile.withdraw_connection_request()
-    except Exception as e:
-        logger.exception("linkedin_withdraw_connection_request failed session_id=%s", ctx.session_id)
-        return f"Failed: linkedin_withdraw_connection_request raised: {e}"
-    return _linkedin_action_message("linkedin_withdraw_connection_request", ok)
-
-
-@mcp.tool
 async def linkedin_follow_profile(
     profile_url: str,
+    unfollow: bool = False,
     ctx: Context = CurrentContext(),
 ) -> str:
     """
-    Follow a member’s public posts without connecting.
+    Follow or unfollow a member’s public posts (without using connection invite).
 
     Use when:
-    - The user wants to follow this person.
+    - The user wants to follow this person, or stop following them.
 
     Args:
     - `profile_url`: Their profile URL.
+    - `unfollow`: False (default) = follow; True = unfollow.
 
     Needs: logged in.
     """
@@ -304,49 +273,14 @@ async def linkedin_follow_profile(
         logger.exception("linkedin_follow_profile wait failed session_id=%s", ctx.session_id)
         return f"Profile page did not become ready in time: {e}"
     try:
-        ok = await profile.follow_profile()
+        if unfollow:
+            ok = await profile.unfollow_profile()
+        else:
+            ok = await profile.follow_profile()
     except Exception as e:
         logger.exception("linkedin_follow_profile failed session_id=%s", ctx.session_id)
         return f"Failed: linkedin_follow_profile raised: {e}"
     return _linkedin_action_message("linkedin_follow_profile", ok)
-
-
-@mcp.tool
-async def linkedin_unfollow_profile(
-    profile_url: str,
-    ctx: Context = CurrentContext(),
-) -> str:
-    """
-    Stop following a member.
-
-    Use when:
-    - The user wants to unfollow this person.
-
-    Args:
-    - `profile_url`: Their profile URL.
-
-    Needs: logged in.
-    """
-    page = await browser.get_page(ctx.session_id)
-    try:
-        await page.goto(profile_url, wait_until="load")
-    except Exception as e:
-        logger.exception("linkedin_unfollow_profile goto failed session_id=%s", ctx.session_id)
-        return f"Failed to open profile URL: {e}"
-    profile = ProfilePage(page)
-    if not profile.is_valid_page():
-        return "This tab is not a LinkedIn profile URL. Use a valid member profile URL."
-    try:
-        await profile.wait_for_page_to_load()
-    except Exception as e:
-        logger.exception("linkedin_unfollow_profile wait failed session_id=%s", ctx.session_id)
-        return f"Profile page did not become ready in time: {e}"
-    try:
-        ok = await profile.unfollow_profile()
-    except Exception as e:
-        logger.exception("linkedin_unfollow_profile failed session_id=%s", ctx.session_id)
-        return f"Failed: linkedin_unfollow_profile raised: {e}"
-    return _linkedin_action_message("linkedin_unfollow_profile", ok)
 
 
 # ============================================================= [ People search ] =============================================================

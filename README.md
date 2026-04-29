@@ -29,9 +29,8 @@ All exported MCP tools use the ``linkedin_`` prefix so they are easy to tell apa
 
 Provide ``profile_url`` for each action.
 
-- ``linkedin_send_connection_request`` — Send an invite (optional note).
-- ``linkedin_withdraw_connection_request`` — Withdraw a pending invite.
-- ``linkedin_follow_profile`` / ``linkedin_unfollow_profile`` — Follow or unfollow public updates.
+- ``linkedin_send_connection_request`` — Send an invite (optional `note`); pass ``withdraw=True`` to cancel a pending invite.
+- ``linkedin_follow_profile`` — Follow someone’s public updates; pass ``unfollow=True`` to stop following.
 
 ### People search
 
@@ -58,7 +57,7 @@ After search or filters change the screen, use ``linkedin_get_page_content`` to 
 ## Example flows
 
 1. **Discover candidates** — ``linkedin_search_people``, optionally ``linkedin_apply_search_filters`` and pagination tools, then ``linkedin_get_page_content`` to summarize.
-2. **Connect** — ``linkedin_send_connection_request`` with the profile URL and optional note.
+2. **Connect** — ``linkedin_send_connection_request`` with the profile URL and optional note. To withdraw a pending invite, same tool with ``withdraw=True``.
 3. **Message** — ``linkedin_send_message_to`` with recipient name and text (or ``linkedin_open_chat_with`` first if you want to verify the thread opens).
 
 ## Expectations and limits
