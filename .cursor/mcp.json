@@ -1,9 +1,7 @@
 {
     "mcpServers": {
       "LinkedInMCP": {
-        // "command": "/home/roshan-yadav/Desktop/MCP Development/Learning/.venv/bin/python",
-        // "args": ["/home/roshan-yadav/Desktop/MCP Development/Learning/server.py"]
-        "url": "http://localhost:8000/mcp"
+        "url": "http://localhost:9090/mcp"
       }
     }
   }

@@ -5,6 +5,7 @@ from urllib.parse import quote_plus, urlparse
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
+from mcp.server.fastmcp import Image
 
 from browser_profile_config import persistent_context_kwargs
 from chrome_profile_manager import ChromeProfileManager
@@ -65,7 +66,9 @@ async def _ensure_messaging_thread(
     try:
         await page.goto(url, wait_until="load")
     except Exception as e:
-        logger.exception("_ensure_messaging_thread goto failed session_id=%s", session_id)
+        logger.exception(
+            "_ensure_messaging_thread goto failed session_id=%s", session_id
+        )
         return f"Failed to open LinkedIn new message page: {e}", None
 
     messaging = MessagingPage(page)
@@ -78,13 +81,17 @@ async def _ensure_messaging_thread(
     try:
         await messaging.wait_for_page_to_load()
     except Exception as e:
-        logger.exception("_ensure_messaging_thread wait failed session_id=%s", session_id)
+        logger.exception(
+            "_ensure_messaging_thread wait failed session_id=%s", session_id
+        )
         return f"Messaging page did not become ready in time: {e}", None
 
     try:
         ok = await messaging.load_chat(normalized)
     except Exception as e:
-        logger.exception("_ensure_messaging_thread load_chat failed session_id=%s", session_id)
+        logger.exception(
+            "_ensure_messaging_thread load_chat failed session_id=%s", session_id
+        )
         return f"Failed: load_chat raised: {e}", None
 
     if not ok:
@@ -117,6 +124,20 @@ async def linkedin_login(ctx: Context = CurrentContext()) -> str:
 
 
 @mcp.tool
+async def linkedin_capture_screenshot(ctx: Context = CurrentContext()) -> str:
+    """
+    Capture a screenshot of the current page.
+    """
+    try:
+        page = await browser.get_page(ctx.session_id)
+        screenshot = await page.screenshot()
+        return Image(data=screenshot)
+    except Exception as e:
+        logger.exception("linkedin_capture_screenshot failed session_id=%s", ctx.session_id)
+        return f"Failed to capture screenshot: {e}"
+
+
+@mcp.tool
 async def linkedin_open_page(url: str, ctx: Context = CurrentContext()) -> str:
     """
     Go to a LinkedIn page (profile, search, company, etc.) in the browser for this session.
@@ -138,7 +159,9 @@ async def linkedin_open_page(url: str, ctx: Context = CurrentContext()) -> str:
         page = await browser.get_page(ctx.session_id)
         await page.goto(url, wait_until="load")
     except Exception as e:
-        logger.exception("linkedin_open_page failed session_id=%s url=%r", ctx.session_id, url)
+        logger.exception(
+            "linkedin_open_page failed session_id=%s url=%r", ctx.session_id, url
+        )
         return f"Failed to open URL: {e}"
     return f"Opened URL in this session's page: {url!r}."
 
@@ -170,7 +193,9 @@ async def linkedin_get_page_content(ctx: Context = CurrentContext()) -> str:
         content = await page.content()
         return html_to_markdown(content)
     except Exception as e:
-        logger.exception("linkedin_get_page_content failed session_id=%s", ctx.session_id)
+        logger.exception(
+            "linkedin_get_page_content failed session_id=%s", ctx.session_id
+        )
         return f"Failed to read page content: {e}"
 
 
@@ -219,7 +244,9 @@ async def linkedin_send_connection_request(
     try:
         await page.goto(profile_url, wait_until="load")
     except Exception as e:
-        logger.exception("linkedin_send_connection_request goto failed session_id=%s", ctx.session_id)
+        logger.exception(
+            "linkedin_send_connection_request goto failed session_id=%s", ctx.session_id
+        )
         return f"Failed to open profile URL: {e}"
     profile = ProfilePage(page)
     if not profile.is_valid_page():
@@ -227,7 +254,9 @@ async def linkedin_send_connection_request(
     try:
         await profile.wait_for_page_to_load()
     except Exception as e:
-        logger.exception("linkedin_send_connection_request wait failed session_id=%s", ctx.session_id)
+        logger.exception(
+            "linkedin_send_connection_request wait failed session_id=%s", ctx.session_id
+        )
         return f"Profile page did not become ready in time: {e}"
     try:
         if withdraw:
@@ -235,7 +264,9 @@ async def linkedin_send_connection_request(
         else:
             ok = await profile.send_connection_request(note=note)
     except Exception as e:
-        logger.exception("linkedin_send_connection_request failed session_id=%s", ctx.session_id)
+        logger.exception(
+            "linkedin_send_connection_request failed session_id=%s", ctx.session_id
+        )
         return f"Failed: linkedin_send_connection_request raised: {e}"
     return _linkedin_action_message("linkedin_send_connection_request", ok)
 
@@ -262,7 +293,9 @@ async def linkedin_follow_profile(
     try:
         await page.goto(profile_url, wait_until="load")
     except Exception as e:
-        logger.exception("linkedin_follow_profile goto failed session_id=%s", ctx.session_id)
+        logger.exception(
+            "linkedin_follow_profile goto failed session_id=%s", ctx.session_id
+        )
         return f"Failed to open profile URL: {e}"
     profile = ProfilePage(page)
     if not profile.is_valid_page():
@@ -270,7 +303,9 @@ async def linkedin_follow_profile(
     try:
         await profile.wait_for_page_to_load()
     except Exception as e:
-        logger.exception("linkedin_follow_profile wait failed session_id=%s", ctx.session_id)
+        logger.exception(
+            "linkedin_follow_profile wait failed session_id=%s", ctx.session_id
+        )
         return f"Profile page did not become ready in time: {e}"
     try:
         if unfollow:
@@ -319,7 +354,9 @@ async def linkedin_search_people(
         await page.goto(url, wait_until="load")
     except Exception as e:
         logger.exception(
-            "linkedin_search_people goto failed query=%r in_my_connections=%s", query, in_my_connections
+            "linkedin_search_people goto failed query=%r in_my_connections=%s",
+            query,
+            in_my_connections,
         )
         return f"Failed to open LinkedIn people search: {e}"
     scope = "your connections only" if in_my_connections else "all of LinkedIn"
@@ -330,7 +367,9 @@ async def linkedin_search_people(
 
 
 @mcp.tool
-async def linkedin_apply_search_filters(filter: Filter, ctx: Context = CurrentContext()) -> str:
+async def linkedin_apply_search_filters(
+    filter: Filter, ctx: Context = CurrentContext()
+) -> str:
     """
     Apply filters on a LinkedIn people search results page (degree, school, company, etc.).
 
@@ -352,12 +391,16 @@ async def linkedin_apply_search_filters(filter: Filter, ctx: Context = CurrentCo
     try:
         await search.wait_for_page_to_load()
     except Exception as e:
-        logger.exception("linkedin_apply_search_filters wait failed session_id=%s", ctx.session_id)
+        logger.exception(
+            "linkedin_apply_search_filters wait failed session_id=%s", ctx.session_id
+        )
         return f"Search page did not become ready in time: {e}"
     try:
         ok = await search.apply_filters(filter)
     except Exception as e:
-        logger.exception("linkedin_apply_search_filters failed session_id=%s", ctx.session_id)
+        logger.exception(
+            "linkedin_apply_search_filters failed session_id=%s", ctx.session_id
+        )
         return f"Failed: linkedin_apply_search_filters raised: {e}"
     return _linkedin_action_message("linkedin_apply_search_filters", ok)
 
@@ -382,12 +425,16 @@ async def linkedin_search_next_page(ctx: Context = CurrentContext()) -> str:
     try:
         await search.wait_for_page_to_load()
     except Exception as e:
-        logger.exception("linkedin_search_next_page wait failed session_id=%s", ctx.session_id)
+        logger.exception(
+            "linkedin_search_next_page wait failed session_id=%s", ctx.session_id
+        )
         return f"Search page did not become ready in time: {e}"
     try:
         ok = await search.click_on_pagination_next_button()
     except Exception as e:
-        logger.exception("linkedin_search_next_page failed session_id=%s", ctx.session_id)
+        logger.exception(
+            "linkedin_search_next_page failed session_id=%s", ctx.session_id
+        )
         return f"Failed: linkedin_search_next_page raised: {e}"
     return _linkedin_action_message("linkedin_search_next_page", ok)
 
@@ -412,19 +459,25 @@ async def linkedin_search_previous_page(ctx: Context = CurrentContext()) -> str:
     try:
         await search.wait_for_page_to_load()
     except Exception as e:
-        logger.exception("linkedin_search_previous_page wait failed session_id=%s", ctx.session_id)
+        logger.exception(
+            "linkedin_search_previous_page wait failed session_id=%s", ctx.session_id
+        )
         return f"Search page did not become ready in time: {e}"
     try:
         ok = await search.click_on_pagination_previous_button()
     except Exception as e:
-        logger.exception("linkedin_search_previous_page failed session_id=%s", ctx.session_id)
+        logger.exception(
+            "linkedin_search_previous_page failed session_id=%s", ctx.session_id
+        )
         return f"Failed: linkedin_search_previous_page raised: {e}"
     return _linkedin_action_message("linkedin_search_previous_page", ok)
 
 
 # ============================================================= [ Messaging ] =============================================================
 @mcp.tool
-async def linkedin_open_chat_with(user_name: str, ctx: Context = CurrentContext()) -> str:
+async def linkedin_open_chat_with(
+    user_name: str, ctx: Context = CurrentContext()
+) -> str:
     """
     Open a LinkedIn chat with someone by name (does not send a message).
 
@@ -440,7 +493,9 @@ async def linkedin_open_chat_with(user_name: str, ctx: Context = CurrentContext(
     if err:
         return err
     status = _linkedin_action_message("linkedin_open_chat_with", True)
-    return f"{status} To send text, use linkedin_send_message_to with the same user_name."
+    return (
+        f"{status} To send text, use linkedin_send_message_to with the same user_name."
+    )
 
 
 @mcp.tool
@@ -470,10 +525,12 @@ async def linkedin_send_message_to(
     try:
         ok = await messaging.send_message(message.strip())
     except Exception as e:
-        logger.exception("linkedin_send_message_to failed session_id=%s", ctx.session_id)
+        logger.exception(
+            "linkedin_send_message_to failed session_id=%s", ctx.session_id
+        )
         return f"Failed: linkedin_send_message_to raised: {e}"
     return _linkedin_action_message("linkedin_send_message_to", ok)
 
 
 if __name__ == "__main__":
-    mcp.run(transport="http", host="127.0.0.1", port=8000)
+    mcp.run(transport="http", host="127.0.0.1", port=9090)
