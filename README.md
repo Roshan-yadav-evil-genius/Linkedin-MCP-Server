@@ -4,69 +4,66 @@
 
 ## Who it is for
 
-This project suits individuals or teams who want an AI agent to help with LinkedIn workflows—for example finding people, narrowing lists with filters, reading result pages, taking simple actions on a member’s profile, or sending a message after opening messaging—while a human handles sign-in when LinkedIn asks for it (password, second factor, or other checks).
+This project suits individuals or teams who want an AI agent to help with LinkedIn workflows—for example finding people, narrowing lists with filters, reading result pages, taking simple actions on a member’s profile, or sending a message—while a human handles sign-in when LinkedIn asks for it (password, second factor, or other checks).
 
 ## How the agent typically works
 
-1. **Sign in when needed** — The assistant can start an interactive sign-in flow. You complete authentication in the browser; when you close the window, the saved session is ready for later steps.
-2. **Work on a specific page** — The assistant opens a URL and receives a short-lived **tab reference** for that page. Most tools expect the right kind of LinkedIn page to be active on that tab (for example a person’s profile or people search results).
-3. **Act or read** — The assistant can run built-in LinkedIn actions (connect, follow, search, filters, pagination, messaging) or **read the current page as clean text** so it can reason over names, headlines, and snippets. For unusual layouts, it can run **custom actions inside the page** when the built-in tools are not enough.
-4. **Close when finished** — The assistant can close tabs it no longer needs so work stays tidy.
+1. **Sign in when needed** — Call ``linkedin_login`` to open the LinkedIn login page; the user completes authentication in the browser.
+2. **Work on the session page** — One browser tab per MCP session. Tools navigate or act on that tab. Most LinkedIn actions expect the correct kind of page (profile URL, people search, messaging).
+3. **Act or read** — Use the ``linkedin_*`` tools below. To see names and lists as text, call ``linkedin_get_page_content``. For behavior no named tool covers, use ``linkedin_run_javascript`` sparingly.
+4. **Close when finished** — ``linkedin_close_page`` closes the tab for this session when you want a clean slate.
 
-## Capabilities
+## Capabilities (tool names)
+
+All exported MCP tools use the ``linkedin_`` prefix so they are easy to tell apart from generic browser MCPs.
 
 ### Session and browsing
 
-- **Interactive sign-in** — Open a real browser so you can log in or refresh your session; state is saved for future automation.
-- **Open and close pages** — Navigate to a URL on a tracked tab, or close a tab when done.
-- **Read page content** — Get the visible content of the current tab as readable text (suitable for the model to analyze).
-- **Custom in-page actions** — Run tailored logic inside the active tab when you need behavior that is not covered by the built-in LinkedIn tools.
+- ``linkedin_login`` — Open LinkedIn login for manual sign-in.
+- ``linkedin_open_page`` — Navigate to a LinkedIn URL only (``https://…linkedin.com/…``).
+- ``linkedin_close_page`` — Close the session tab.
+- ``linkedin_get_page_content`` — Read the current page as Markdown-style text.
+- ``linkedin_run_javascript`` — Run JS in the page and return the result (escape hatch).
 
-### Member profile (profile must be the active tab)
+### Member profile
 
-- **Send a connection request** — Optionally include a short personalized note, or send without a note when the site allows it.
-- **Withdraw a pending request** — Cancel an outbound invitation that is still pending.
-- **Follow the member** — Subscribe to their public updates without necessarily connecting.
-- **Unfollow the member** — Stop following their updates.
+Provide ``profile_url`` for each action.
+
+- ``linkedin_send_connection_request`` — Send an invite (optional note).
+- ``linkedin_withdraw_connection_request`` — Withdraw a pending invite.
+- ``linkedin_follow_profile`` / ``linkedin_unfollow_profile`` — Follow or unfollow public updates.
+
+### People search
+
+- ``linkedin_search_people`` — Search by keywords; set ``in_my_connections=True`` to limit to your 1st-degree network.
+- ``linkedin_apply_search_filters`` — Narrow people results using the filter schema.
+- ``linkedin_search_next_page`` / ``linkedin_search_previous_page`` — Paginate people search results.
+
+After search or filters change the screen, use ``linkedin_get_page_content`` to read the list.
 
 ### Messaging
 
-- **Open chat window of (by name)** — Opens a new messaging tab (new conversation), searches for a person’s name, opens that thread, and returns a **tab reference** (tool name: ``open_chat_window_of``; you do not open messaging yourself first).
-- **Send a message** — Type and send text using the tab reference returned by ``open_chat_window_of``. **Only use this after that tool has succeeded**; the server enforces that order so sends do not run against the wrong recipient or an empty compose state.
-
-### People discovery and lists
-
-- **Search people (broad)** — Open LinkedIn people search for keywords such as title, company, or skills.
-- **Search within your first-degree network** — Open a people view scoped to your existing connections (or the closest equivalent search experience).
-- **Apply filters** — Narrow people results by relationship degree, people connected to a named member, or followers of a named member (when the filter UI supports it).
-- **Next or previous page of results** — Move through paginated people search results.
-
-Search and filter tools **change what is on screen**; the assistant should **read the tab** afterward if it needs to list names, compare candidates, or summarize the page.
+- ``linkedin_open_chat_with`` — Open a chat with someone by display name (no message sent).
+- ``linkedin_send_message_to`` — Send a DM (recipient name + message body).
 
 ## What changes the site vs what only reads
 
-| Changes LinkedIn (mutating) | Reads only |
-|----------------------------|------------|
-| Send or withdraw a connection request; follow or unfollow; open chat window; send message | Read tab content as text |
-| Open people search or connections-scoped search | Use the same read step after the page loads |
-| Apply search filters; go to next or previous results page | |
-| Custom in-page actions that click, type, or submit | Custom in-page actions used only to gather text from the page |
+| Changes LinkedIn | Reads only |
+|------------------|------------|
+| Connection invite / withdraw; follow / unfollow; messaging tools | ``linkedin_get_page_content`` |
+| Open search or navigate | Same read step after load |
+| Apply filters; next/previous search page | |
+| ``linkedin_run_javascript`` when it clicks/types | ``linkedin_run_javascript`` used only to read |
 
-Built-in search tools **open** the right view and return a message that includes a tab reference; they do **not** return the full result list by themselves. After the page updates, the assistant uses the read capability on that tab to see results.
+## Example flows
 
-## Example flows (what an agent can do)
-
-1. **Discover and narrow candidates** — Run a people search for your keywords, optionally apply filters (for example second-degree only), move to the next page if needed, and read each view so it can summarize or shortlist profiles.
-2. **Connect from a profile** — Open the member’s profile, send a connection request with a short note you approve, or send without a note when appropriate.
-3. **Clean up an invitation** — Open the member’s profile and withdraw a pending request if plans change.
-4. **Stay in touch without connecting** — Open a profile and follow (or unfollow) public updates.
-5. **Message someone** — Open the chat window for their name (``open_chat_window_of`` opens a new messaging tab and returns a tab reference), then send your message using that same reference.
+1. **Discover candidates** — ``linkedin_search_people``, optionally ``linkedin_apply_search_filters`` and pagination tools, then ``linkedin_get_page_content`` to summarize.
+2. **Connect** — ``linkedin_send_connection_request`` with the profile URL and optional note.
+3. **Message** — ``linkedin_send_message_to`` with recipient name and text (or ``linkedin_open_chat_with`` first if you want to verify the thread opens).
 
 ## Expectations and limits
 
-LinkedIn’s interface and rules change over time; a flow that worked yesterday may need adjustment. Accounts can hit limits or see controls disabled (for example already connected, invite pending, or messaging restrictions). Some filters or buttons may not appear for every account or locale.
-
-Use automation responsibly: respect LinkedIn’s terms of service, applicable laws, and courteous outreach. This README is not legal advice; you are responsible for how you use the tools.
+LinkedIn’s interface and rules change over time. Accounts can hit limits or see controls disabled. Use automation responsibly and comply with LinkedIn’s terms and applicable laws.
 
 ## For contributors
 

@@ -22,9 +22,7 @@ class ChromeProfileManager:
         self.page_instances:Dict[str, Page] = {}
 
     async def start(self):
-        logger.info("[start] Starting Chrome Profile Manager")
         self._playwright = await async_playwright().start()
-        logger.info("[start] Playwright started")
         self.browser_context = await self._playwright.chromium.launch_persistent_context(
             user_data_dir=self.user_data_dir,
             headless=self.headless,
@@ -34,7 +32,6 @@ class ChromeProfileManager:
     
 
     async def on_close(self):
-        logger.info("[on_close] Browser context closed")
         await self.stop()
 
     async def new_page(self, session_id: str):
@@ -47,11 +44,8 @@ class ChromeProfileManager:
         return page
 
     async def get_page(self, session_id: str) -> Page:
-        logger.info(f"[get_page] Processing Session Id {session_id}")
         if session_id not in self.page_instances:
-            logger.info(f"[get_page] Session Id {session_id} not found, creating new page")
             return await self.new_page(session_id)
-        logger.info(f"[get_page] Session Id {session_id} found, returning page")
         return self.page_instances.get(session_id)
 
     async def close_page(self, session_id: str):

@@ -40,7 +40,7 @@ def persistent_context_kwargs(
 ) -> dict[str, Any]:
     """Arguments for ``playwright.chromium.launch_persistent_context``."""
     return {
-        # "user_data_dir": user_data_dir or CHROME_PROFILE,
+        "user_data_dir": str(user_data_dir or CHROME_PROFILE),
         "headless": headless,
         "args": list(CHROMIUM_LAUNCH_REASONS.keys()),
         "viewport": dict(DEFAULT_VIEWPORT),

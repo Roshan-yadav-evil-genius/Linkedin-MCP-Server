@@ -269,6 +269,8 @@ Importing **`core`** may execute [`core/__init__.py`](core/__init__.py), which p
 
 ## 8. See also
 
+- MCP HTTP server entrypoints (FastMCP tools) live in [`server.py`](server.py). Tool names use the `linkedin_` prefix (for example `linkedin_search_people`, `linkedin_send_connection_request`) and delegate into `ProfilePage`, `SearchPage`, `MessagingPage`, etc.—those orchestrator **methods** keep names like `send_connection_request()` unchanged here.
+
 - Code references used throughout this doc:
   - [`core/actions.py`](core/actions.py)
   - [`core/models.py`](core/models.py)

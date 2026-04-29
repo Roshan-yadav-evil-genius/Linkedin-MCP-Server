@@ -1,22 +1,39 @@
 import json
 import logging
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 from fastmcp import FastMCP
+from fastmcp.dependencies import CurrentContext
+from fastmcp.server.context import Context
 
-from chrome_profile_manager import PageNotFoundError, get_chrome_profile_manager
-from linkedin_mcp_bridge import (
-    require_messaging_chat_loaded,
-    run_messaging_page,
-    run_profile_page,
-    run_search_page,
-    set_messaging_chat_loaded,
-)
-from page.search_page.action.types import Filter
+from browser_profile_config import persistent_context_kwargs
+from chrome_profile_manager import ChromeProfileManager
 from core.utils import html_to_markdown
+from page.messaging_page.action.page_action import MessagingPage
+from page.profile_page.actions.page_action import ProfilePage
+from page.search_page.action.page_action import SearchPage
+from page.search_page.action.types import Filter
 
 mcp = FastMCP("LinkedInMCP")
 logger = logging.getLogger(__name__)
+
+browser = ChromeProfileManager(**persistent_context_kwargs())
+
+LINKEDIN_LOGIN_URL = "https://www.linkedin.com/login"
+
+
+def _is_linkedin_https_url(url: str) -> bool:
+    """True if url is http(s) and host is linkedin.com or *.linkedin.com."""
+    try:
+        p = urlparse((url or "").strip())
+    except Exception:
+        return False
+    if p.scheme not in ("http", "https"):
+        return False
+    host = (p.netloc or "").split(":")[0].lower()
+    if not host:
+        return False
+    return host == "linkedin.com" or host.endswith(".linkedin.com")
 
 
 def _linkedin_action_message(tool_name: str, ok: bool) -> str:
@@ -33,422 +50,495 @@ def _serialize_eval_result(value: object) -> str:
     except TypeError:
         return str(value)
 
-# Agent-facing tool docstrings: one-line summary, when to use (bullets), requirements,
-# then outcome / next step. Say "get_page_content" when the agent should read the tab.
-# ============================================================= [ General Browser Tools ] =============================================================
-@mcp.tool
-async def login(start_url: str = "about:blank") -> str:
-    """
-    Opens a real browser window so a human can sign in (or refresh a LinkedIn session); when they
-    close the window, cookies and session data are saved for later tool calls.
 
-    When to use:
-    - LinkedIn needs a password, 2FA, CAPTCHA, SSO, or similar and automated steps are not signed in.
-    - Session looks expired and other tools fail until someone logs in again.
+async def _ensure_messaging_thread(
+    ctx: Context, user_name: str
+) -> tuple[str | None, MessagingPage | None]:
+    """Prepare LinkedIn messaging UI and recipient; used by messaging tools."""
+    session_id = ctx.session_id
+    normalized = (user_name or "").strip()
+    if not normalized:
+        return "Failed: user_name must not be empty.", None
 
-    Requirements:
-    - Close extra automated tabs first if your setup needs a clean slate.
-    - Optional `start_url` (default `about:blank`) is where the window first loads.
-
-    Blocking: waits until the browser window is closed; do not run other tools in parallel. No
-    `page_id` is returned. Afterward use `open_page` or LinkedIn tools as usual.
-    """
-    await get_chrome_profile_manager().run_interactive_profile_session(start_url=start_url)
-    return "Login session completed. Authenticated state saved and ready for automation."
-
-
-@mcp.tool
-async def open_page(url: str)->str:
-    """
-    Opens a URL in the managed browser and returns a `page_id` for that tab.
-
-    When to use:
-    - You need a stable tab to read with `get_page_content`, run `run_javascript`, or pass into a LinkedIn tool that requires `page_id`.
-
-    Requirements:
-    - Working browser profile; use `login` when LinkedIn still needs a human sign-in.
-
-    Next: keep the returned `page_id` until you call `close_page` or the server restarts (ids are in-memory only).
-    """
-    return await get_chrome_profile_manager().open_page(url)
-
-@mcp.tool
-async def close_page(page_id: str)->str:
-    """
-    Closes the browser tab for `page_id` and removes the server’s handle.
-
-    When to use:
-    - The tab is finished or you want to avoid too many open tabs.
-
-    Requirements:
-    - `page_id` from `open_page`, `search_people`, `search_person_in_my_connections`, or `open_chat_window_of`.
-
-    Returns a short message (closed, or unknown/closed id).
-    """
-    return await get_chrome_profile_manager().close_page(page_id)
-
-@mcp.tool
-async def get_page_content(page_id: str) -> str:
-    """
-    Returns what is visibly on the page as Markdown (names, headlines, search rows, etc.).
-
-    When to use:
-    - After navigation, search, filters, pagination, or any time you need to see the current screen.
-
-    Requirements:
-    - `page_id` for an open tab from `open_page` or a tool that opens a new tab.
-
-    If the id is invalid you get an error string; otherwise you get readable Markdown (noise like scripts and hidden bits is dropped).
-    """
-    manager = get_chrome_profile_manager()
+    page = await browser.get_page(session_id)
+    url = "https://www.linkedin.com/messaging/thread/new/"
     try:
-        page = manager.get_page(page_id)
-    except PageNotFoundError:
-        return f"Unknown or closed page_id: {page_id!r}."
+        await page.goto(url, wait_until="load")
+    except Exception as e:
+        logger.exception("_ensure_messaging_thread goto failed session_id=%s", session_id)
+        return f"Failed to open LinkedIn new message page: {e}", None
+
+    messaging = MessagingPage(page)
+    if not messaging.is_valid_page():
+        return (
+            "This tab is not a LinkedIn messaging URL after navigation. "
+            "You may call linkedin_close_page to reset this session's tab.",
+            None,
+        )
     try:
+        await messaging.wait_for_page_to_load()
+    except Exception as e:
+        logger.exception("_ensure_messaging_thread wait failed session_id=%s", session_id)
+        return f"Messaging page did not become ready in time: {e}", None
+
+    try:
+        ok = await messaging.load_chat(normalized)
+    except Exception as e:
+        logger.exception("_ensure_messaging_thread load_chat failed session_id=%s", session_id)
+        return f"Failed: load_chat raised: {e}", None
+
+    if not ok:
+        return (
+            "Failed: load_chat did not complete or verify. Check server logs for details.",
+            None,
+        )
+
+    return None, messaging
+
+
+# ============================================================= [ Navigation & page read ] =============================================================
+@mcp.tool
+async def linkedin_login(ctx: Context = CurrentContext()) -> str:
+    """
+    Open LinkedIn’s login page so the user can sign in in the browser.
+
+    Use when:
+    - The session is logged out or LinkedIn asks for password, 2FA, or CAPTCHA.
+
+    After: continue with profile, search, or messaging tools once signed in.
+    """
+    try:
+        page = await browser.get_page(ctx.session_id)
+        await page.goto(LINKEDIN_LOGIN_URL, wait_until="load")
+    except Exception as e:
+        logger.exception("linkedin_login failed session_id=%s", ctx.session_id)
+        return f"Failed to open login URL: {e}"
+    return "Login page opened. Complete sign-in in the browser, then continue with other tools."
+
+
+@mcp.tool
+async def linkedin_open_page(url: str, ctx: Context = CurrentContext()) -> str:
+    """
+    Go to a LinkedIn page (profile, search, company, etc.) in the browser for this session.
+
+    Use when:
+    - You need a specific LinkedIn URL open before reading it or using another LinkedIn tool.
+
+    Args:
+    - `url`: Full https URL whose host is linkedin.com (e.g. https://www.linkedin.com/in/...).
+
+    After: call `linkedin_get_page_content` or a tool that matches that page type.
+    """
+    if not _is_linkedin_https_url(url):
+        return (
+            "Failed: url must be a LinkedIn address (https://www.linkedin.com/... or other *.linkedin.com). "
+            "Non-LinkedIn pages are not allowed."
+        )
+    try:
+        page = await browser.get_page(ctx.session_id)
+        await page.goto(url, wait_until="load")
+    except Exception as e:
+        logger.exception("linkedin_open_page failed session_id=%s url=%r", ctx.session_id, url)
+        return f"Failed to open URL: {e}"
+    return f"Opened URL in this session's page: {url!r}."
+
+
+@mcp.tool
+async def linkedin_close_page(ctx: Context = CurrentContext()) -> str:
+    """
+    Close the browser tab for this session.
+
+    Use when:
+    - You are done with the tab or want a fresh tab before the next navigation.
+    """
+    await browser.close_page(ctx.session_id)
+    return "Page closed successfully."
+
+
+@mcp.tool
+async def linkedin_get_page_content(ctx: Context = CurrentContext()) -> str:
+    """
+    Read the current page as readable text (Markdown-style) for the model.
+
+    Use when:
+    - You need to see listings, names, or UI text after search, filters, or opening a profile.
+
+    Needs: browser already showing the page you care about (`linkedin_open_page` or a search tool first).
+    """
+    try:
+        page = await browser.get_page(ctx.session_id)
         content = await page.content()
         return html_to_markdown(content)
     except Exception as e:
-        logger.exception("get_page_content failed for page_id=%s", page_id)
+        logger.exception("linkedin_get_page_content failed session_id=%s", ctx.session_id)
         return f"Failed to read page content: {e}"
 
+
 @mcp.tool
-async def run_javascript(page_id: str, script: str) -> str:
+async def linkedin_run_javascript(script: str, ctx: Context = CurrentContext()) -> str:
     """
-    Runs your script inside the open tab and returns its result as text (escape hatch when no dedicated tool fits).
+    Run JavaScript in the page and return the script’s result as text. Use only if no dedicated tool fits.
 
-    When to use:
-    - A one-off click, read, or small automation is needed and there is no named LinkedIn tool for it.
+    Use when:
+    - You need a one-off read or action not covered by other LinkedIn tools.
 
-    Requirements:
-    - Valid `page_id`. The script must `return` a value so the tool has something to send back.
-
-    Prefer the built-in LinkedIn tools when they match the task. Errors look like `JavaScript error: ...` or an unknown `page_id` message.
+    Args:
+    - `script`: JavaScript that ends with `return` so there is a value to send back.
     """
-    manager = get_chrome_profile_manager()
     try:
-        page = manager.get_page(page_id)
-    except PageNotFoundError:
-        return f"Unknown or closed page_id: {page_id!r}."
-    try:
+        page = await browser.get_page(ctx.session_id)
         result = await page.evaluate(script)
     except Exception as e:
-        logger.exception("run_javascript failed for page_id=%s", page_id)
+        logger.exception("linkedin_run_javascript failed session_id=%s", ctx.session_id)
         return f"JavaScript error: {e}"
     return _serialize_eval_result(result)
 
-# ============================================================= [ LinkedIn Specific Tools ] =============================================================
 
-
-
-# ============================================================= [ Profile Page Tools ] =============================================================
+# ============================================================= [ Profile ] =============================================================
 @mcp.tool
-async def send_connection_request(page_id: str, note: str = "")->str:
+async def linkedin_send_connection_request(
+    profile_url: str,
+    note: str = "",
+    ctx: Context = CurrentContext(),
+) -> str:
     """
-    Sends a connection invite to the person whose LinkedIn profile is open on `page_id`.
+    Send a LinkedIn connection invite to a member.
 
-    When to use:
-    - The user wants to connect with this person and their profile page is already loaded.
+    Use when:
+    - The user wants to connect with this person.
 
-    Requirements:
-    - Tab must be that member’s profile URL (use `open_page` on their profile first). Signed-in session.
-    - LinkedIn may refuse if you are already connected, a request is pending, or limits apply.
+    Args:
+    - `profile_url`: Their profile URL.
+    - `note`: Optional invite note; empty for no note when allowed.
 
-    Reply text is `Success: send_connection_request completed.` or `Failed: send_connection_request did not complete or verify. ...`.
-    Use an empty `note` to try sending without a message when the site allows it.
+    Needs: logged in. LinkedIn may refuse duplicates, limits, or pending states.
     """
-    profile, err = await run_profile_page(page_id)
-    if err:
-        return err
+    page = await browser.get_page(ctx.session_id)
+    try:
+        await page.goto(profile_url, wait_until="load")
+    except Exception as e:
+        logger.exception("linkedin_send_connection_request goto failed session_id=%s", ctx.session_id)
+        return f"Failed to open profile URL: {e}"
+    profile = ProfilePage(page)
+    if not profile.is_valid_page():
+        return "This tab is not a LinkedIn profile URL. Use a valid member profile URL."
+    try:
+        await profile.wait_for_page_to_load()
+    except Exception as e:
+        logger.exception("linkedin_send_connection_request wait failed session_id=%s", ctx.session_id)
+        return f"Profile page did not become ready in time: {e}"
     try:
         ok = await profile.send_connection_request(note=note)
     except Exception as e:
-        logger.exception("send_connection_request failed page_id=%s", page_id)
-        return f"Failed: send_connection_request raised: {e}"
-    return _linkedin_action_message("send_connection_request", ok)
+        logger.exception("linkedin_send_connection_request failed session_id=%s", ctx.session_id)
+        return f"Failed: linkedin_send_connection_request raised: {e}"
+    return _linkedin_action_message("linkedin_send_connection_request", ok)
 
 
 @mcp.tool
-async def withdraw_connection_request(page_id: str)->str:
+async def linkedin_withdraw_connection_request(
+    profile_url: str,
+    ctx: Context = CurrentContext(),
+) -> str:
     """
-    Withdraws your pending connection request to the person whose profile is open on `page_id`.
+    Withdraw a pending connection invite you sent to this member.
 
-    When to use:
+    Use when:
     - The user wants to cancel an outbound invite before it is accepted.
 
-    Requirements:
-    - Profile URL on that tab; signed in. No pending invite means the action may fail or do nothing.
+    Args:
+    - `profile_url`: Their profile URL.
 
-    Reply uses `Success: withdraw_connection_request completed.` or the matching `Failed: ...` line. To invite again later, use `send_connection_request`.
+    Needs: logged in; no pending invite may mean nothing happens.
     """
-    profile, err = await run_profile_page(page_id)
-    if err:
-        return err
+    page = await browser.get_page(ctx.session_id)
+    try:
+        await page.goto(profile_url, wait_until="load")
+    except Exception as e:
+        logger.exception("linkedin_withdraw_connection_request goto failed session_id=%s", ctx.session_id)
+        return f"Failed to open profile URL: {e}"
+    profile = ProfilePage(page)
+    if not profile.is_valid_page():
+        return "This tab is not a LinkedIn profile URL. Use a valid member profile URL."
+    try:
+        await profile.wait_for_page_to_load()
+    except Exception as e:
+        logger.exception("linkedin_withdraw_connection_request wait failed session_id=%s", ctx.session_id)
+        return f"Profile page did not become ready in time: {e}"
     try:
         ok = await profile.withdraw_connection_request()
     except Exception as e:
-        logger.exception("withdraw_connection_request failed page_id=%s", page_id)
-        return f"Failed: withdraw_connection_request raised: {e}"
-    return _linkedin_action_message("withdraw_connection_request", ok)
+        logger.exception("linkedin_withdraw_connection_request failed session_id=%s", ctx.session_id)
+        return f"Failed: linkedin_withdraw_connection_request raised: {e}"
+    return _linkedin_action_message("linkedin_withdraw_connection_request", ok)
+
 
 @mcp.tool
-async def follow_profile(page_id: str)->str:
+async def linkedin_follow_profile(
+    profile_url: str,
+    ctx: Context = CurrentContext(),
+) -> str:
     """
-    Follows the person so you see their public updates, without requiring a connection.
+    Follow a member’s public posts without connecting.
 
-    When to use:
-    - The user wants to follow this member from their profile page.
+    Use when:
+    - The user wants to follow this person.
 
-    Requirements:
-    - Their profile URL on `page_id`; signed in. Already following or missing controls can make this a no-op or failure.
+    Args:
+    - `profile_url`: Their profile URL.
 
-    Reply uses `Success: follow_profile completed.` or `Failed: follow_profile ...`.
+    Needs: logged in.
     """
-    profile, err = await run_profile_page(page_id)
-    if err:
-        return err
+    page = await browser.get_page(ctx.session_id)
+    try:
+        await page.goto(profile_url, wait_until="load")
+    except Exception as e:
+        logger.exception("linkedin_follow_profile goto failed session_id=%s", ctx.session_id)
+        return f"Failed to open profile URL: {e}"
+    profile = ProfilePage(page)
+    if not profile.is_valid_page():
+        return "This tab is not a LinkedIn profile URL. Use a valid member profile URL."
+    try:
+        await profile.wait_for_page_to_load()
+    except Exception as e:
+        logger.exception("linkedin_follow_profile wait failed session_id=%s", ctx.session_id)
+        return f"Profile page did not become ready in time: {e}"
     try:
         ok = await profile.follow_profile()
     except Exception as e:
-        logger.exception("follow_profile failed page_id=%s", page_id)
-        return f"Failed: follow_profile raised: {e}"
-    return _linkedin_action_message("follow_profile", ok)
+        logger.exception("linkedin_follow_profile failed session_id=%s", ctx.session_id)
+        return f"Failed: linkedin_follow_profile raised: {e}"
+    return _linkedin_action_message("linkedin_follow_profile", ok)
+
 
 @mcp.tool
-async def unfollow_profile(page_id: str)->str:
+async def linkedin_unfollow_profile(
+    profile_url: str,
+    ctx: Context = CurrentContext(),
+) -> str:
     """
-    Stops following the person whose profile is open on `page_id`.
+    Stop following a member.
 
-    When to use:
-    - The user no longer wants this member’s updates in their feed from this action.
+    Use when:
+    - The user wants to unfollow this person.
 
-    Requirements:
-    - Profile URL on that tab; signed in. Not following them can mean a no-op or failure.
+    Args:
+    - `profile_url`: Their profile URL.
 
-    Reply uses `Success: unfollow_profile completed.` or `Failed: unfollow_profile ...`.
+    Needs: logged in.
     """
-    profile, err = await run_profile_page(page_id)
-    if err:
-        return err
+    page = await browser.get_page(ctx.session_id)
+    try:
+        await page.goto(profile_url, wait_until="load")
+    except Exception as e:
+        logger.exception("linkedin_unfollow_profile goto failed session_id=%s", ctx.session_id)
+        return f"Failed to open profile URL: {e}"
+    profile = ProfilePage(page)
+    if not profile.is_valid_page():
+        return "This tab is not a LinkedIn profile URL. Use a valid member profile URL."
+    try:
+        await profile.wait_for_page_to_load()
+    except Exception as e:
+        logger.exception("linkedin_unfollow_profile wait failed session_id=%s", ctx.session_id)
+        return f"Profile page did not become ready in time: {e}"
     try:
         ok = await profile.unfollow_profile()
     except Exception as e:
-        logger.exception("unfollow_profile failed page_id=%s", page_id)
-        return f"Failed: unfollow_profile raised: {e}"
-    return _linkedin_action_message("unfollow_profile", ok)
+        logger.exception("linkedin_unfollow_profile failed session_id=%s", ctx.session_id)
+        return f"Failed: linkedin_unfollow_profile raised: {e}"
+    return _linkedin_action_message("linkedin_unfollow_profile", ok)
 
 
-# ============================================================= [ Search Page Tools ] =============================================================
+# ============================================================= [ People search ] =============================================================
 @mcp.tool
-async def search_people(query: str)->str:
+async def linkedin_search_people(
+    query: str,
+    in_my_connections: bool = False,
+    ctx: Context = CurrentContext(),
+) -> str:
     """
-    Opens LinkedIn people search for keywords across the whole network (not limited to people you already know).
+    Search LinkedIn for people by keywords (name, title, company, skills, etc.).
 
-    When to use:
-    - Finding candidates by title, company, skills, or other search words.
+    Use when:
+    - You need a list of people matching a query.
 
-    Requirements:
-    - Signed in for full results.
+    Args:
+    - `query`: Search words.
+    - `in_my_connections`: True = only your 1st-degree connections; False = all of LinkedIn.
 
-    Opens a new tab and returns text that includes a fresh `page_id`. Save it, then call `get_page_content` to read who appears. Use `apply_filters` on that same `page_id` when you need degree or “connections of / followers of” style filters.
+    After: `linkedin_get_page_content` to read results; `linkedin_apply_search_filters` to narrow.
     """
-    url = (
-        "https://www.linkedin.com/search/results/people/"
-        f"?keywords={quote_plus(query)}&origin=SWITCH_SEARCH_VERTICAL"
-    )
+    if in_my_connections:
+        url = (
+            "https://www.linkedin.com/search/results/people/"
+            f"?keywords={quote_plus(query)}"
+            "&origin=MEMBER_PROFILE_CANNED_SEARCH"
+            "&network=%5B%22F%22%5D"
+        )
+    else:
+        url = (
+            "https://www.linkedin.com/search/results/people/"
+            f"?keywords={quote_plus(query)}&origin=SWITCH_SEARCH_VERTICAL"
+        )
     try:
-        page_id = await get_chrome_profile_manager().open_page(url)
+        page = await browser.get_page(ctx.session_id)
+        await page.goto(url, wait_until="load")
     except Exception as e:
-        logger.exception("search_people open_page failed query=%r", query)
+        logger.exception(
+            "linkedin_search_people goto failed query=%r in_my_connections=%s", query, in_my_connections
+        )
         return f"Failed to open LinkedIn people search: {e}"
+    scope = "your connections only" if in_my_connections else "all of LinkedIn"
     return (
-        f"Opened LinkedIn people search for query={query!r}. page_id={page_id!r}. "
-        "Call get_page_content with this page_id to read the results as Markdown."
+        f"Opened people search ({scope}) for query={query!r}. "
+        "Call linkedin_get_page_content to read the results."
     )
+
 
 @mcp.tool
-async def search_person_in_my_connections(query: str)->str:
+async def linkedin_apply_search_filters(filter: Filter, ctx: Context = CurrentContext()) -> str:
     """
-    Opens people search narrowed to your first-degree network so you can find someone you are already connected to.
+    Apply filters on a LinkedIn people search results page (degree, school, company, etc.).
 
-    When to use:
-    - The user is looking up a connection by name or keyword, not doing a broad talent search.
+    Use when:
+    - Results are too broad and you need to narrow the list.
 
-    Requirements:
-    - Signed in.
+    Args:
+    - `filter`: Fields per the tool schema.
 
-    Contrast: `search_people` is the wide search; this one is scoped to direct connections. Returns a new `page_id` in the message—call `get_page_content` on it to read the list.
+    Needs: people search results already open (`linkedin_search_people` or `linkedin_open_page` to a people-search URL). Then `linkedin_get_page_content`.
     """
-    # https://www.linkedin.com/search/results/people/?keywords=hr&origin=GLOBAL_SEARCH_HEADER&network=%5B%22F%22%5D
-    # First-degree network facet on people search (approximates “my connections” discovery).
-    url = (
-        "https://www.linkedin.com/search/results/people/"
-        f"?keywords={quote_plus(query)}"
-        "&origin=MEMBER_PROFILE_CANNED_SEARCH"
-        "&network=%5B%22F%22%5D"
-    )
+    page = await browser.get_page(ctx.session_id)
+    search = SearchPage(page)
+    if not search.is_valid_page():
+        return (
+            "This tab is not LinkedIn people search (/search/results/people/). "
+            "Use linkedin_search_people, linkedin_open_page with a people search URL, or navigate first."
+        )
     try:
-        page_id = await get_chrome_profile_manager().open_page(url)
+        await search.wait_for_page_to_load()
     except Exception as e:
-        logger.exception("search_person_in_my_connections open_page failed query=%r", query)
-        return f"Failed to open LinkedIn connections-scoped search: {e}"
-    return (
-        f"Opened LinkedIn people search (1st-degree / connections network) for query={query!r}. "
-        f"page_id={page_id!r}. Call get_page_content with this page_id to read the results as Markdown."
-    )
-
-@mcp.tool
-async def apply_filters(page_id: str, filter: Filter)->str:
-    """
-    Applies people-search filters on the tab that already shows LinkedIn people search (degrees, connections of, followers of).
-
-    When to use:
-    - You have a people results tab and need to narrow who appears before reading or paging.
-
-    Requirements:
-    - `page_id` must be people search (for example from `search_people` or `open_page` to a people-search URL). Signed in.
-    - Build `filter` from the schema: each field has a short description there.
-
-    Does not return the result list. After the tool responds, call `get_page_content` with the same `page_id`. Reply text follows `Success: apply_filters completed.` or `Failed: apply_filters ...`.
-    """
-    search, err = await run_search_page(page_id)
-    if err:
-        return err
+        logger.exception("linkedin_apply_search_filters wait failed session_id=%s", ctx.session_id)
+        return f"Search page did not become ready in time: {e}"
     try:
         ok = await search.apply_filters(filter)
     except Exception as e:
-        logger.exception("apply_filters failed page_id=%s", page_id)
-        return f"Failed: apply_filters raised: {e}"
-    return _linkedin_action_message("apply_filters", ok)
+        logger.exception("linkedin_apply_search_filters failed session_id=%s", ctx.session_id)
+        return f"Failed: linkedin_apply_search_filters raised: {e}"
+    return _linkedin_action_message("linkedin_apply_search_filters", ok)
+
 
 @mcp.tool
-async def click_on_pagination_next_button(page_id: str)->str:
+async def linkedin_search_next_page(ctx: Context = CurrentContext()) -> str:
     """
-    Goes to the next page of LinkedIn people search results for the same query and filters.
+    Go to the next page of LinkedIn people search results.
 
-    When to use:
+    Use when:
     - More results exist and you need the following page.
 
-    Requirements:
-    - `page_id` on people search with pagination showing; signed in.
-
-    Does not change the search words—only the page index. Then call `get_page_content` to read the new screen. Reply uses `Success: click_on_pagination_next_button completed.` or `Failed: ...`.
+    Needs: people search results visible. Then `linkedin_get_page_content`.
     """
-    search, err = await run_search_page(page_id)
-    if err:
-        return err
+    page = await browser.get_page(ctx.session_id)
+    search = SearchPage(page)
+    if not search.is_valid_page():
+        return (
+            "This tab is not LinkedIn people search (/search/results/people/). "
+            "Use linkedin_search_people, linkedin_open_page with a people search URL, or navigate first."
+        )
+    try:
+        await search.wait_for_page_to_load()
+    except Exception as e:
+        logger.exception("linkedin_search_next_page wait failed session_id=%s", ctx.session_id)
+        return f"Search page did not become ready in time: {e}"
     try:
         ok = await search.click_on_pagination_next_button()
     except Exception as e:
-        logger.exception("click_on_pagination_next_button failed page_id=%s", page_id)
-        return f"Failed: click_on_pagination_next_button raised: {e}"
-    return _linkedin_action_message("click_on_pagination_next_button", ok)
+        logger.exception("linkedin_search_next_page failed session_id=%s", ctx.session_id)
+        return f"Failed: linkedin_search_next_page raised: {e}"
+    return _linkedin_action_message("linkedin_search_next_page", ok)
+
 
 @mcp.tool
-async def click_on_pagination_previous_button(page_id: str)->str:
+async def linkedin_search_previous_page(ctx: Context = CurrentContext()) -> str:
     """
-    Goes back one page in LinkedIn people search results.
+    Go to the previous page of LinkedIn people search results.
 
-    When to use:
-    - You moved forward with `click_on_pagination_next_button` and need the prior results page.
+    Use when:
+    - You moved forward and need the prior results page.
 
-    Requirements:
-    - People search tab with a visible previous control; signed in.
-
-    Then call `get_page_content` to read the list. Reply uses `Success: click_on_pagination_previous_button completed.` or `Failed: ...`.
+    Needs: people search with a working previous control. Then `linkedin_get_page_content`.
     """
-    search, err = await run_search_page(page_id)
-    if err:
-        return err
+    page = await browser.get_page(ctx.session_id)
+    search = SearchPage(page)
+    if not search.is_valid_page():
+        return (
+            "This tab is not LinkedIn people search (/search/results/people/). "
+            "Use linkedin_search_people, linkedin_open_page with a people search URL, or navigate first."
+        )
+    try:
+        await search.wait_for_page_to_load()
+    except Exception as e:
+        logger.exception("linkedin_search_previous_page wait failed session_id=%s", ctx.session_id)
+        return f"Search page did not become ready in time: {e}"
     try:
         ok = await search.click_on_pagination_previous_button()
     except Exception as e:
-        logger.exception("click_on_pagination_previous_button failed page_id=%s", page_id)
-        return f"Failed: click_on_pagination_previous_button raised: {e}"
-    return _linkedin_action_message("click_on_pagination_previous_button", ok)
-
-# ============================================================= [ Messaging Page Tools ] =============================================================
+        logger.exception("linkedin_search_previous_page failed session_id=%s", ctx.session_id)
+        return f"Failed: linkedin_search_previous_page raised: {e}"
+    return _linkedin_action_message("linkedin_search_previous_page", ok)
 
 
+# ============================================================= [ Messaging ] =============================================================
 @mcp.tool
-async def open_chat_window_of(user_name: str) -> str:
+async def linkedin_open_chat_with(user_name: str, ctx: Context = CurrentContext()) -> str:
     """
-    Run this before `send_messaging_message` for a new recipient: opens a new messaging tab, picks the person by name, and tells the server this tab is allowed to send.
+    Open a LinkedIn chat with someone by name (does not send a message).
 
-    Ordering and reuse:
-    - Call once when starting (or deliberately switching) a recipient. Reuse the returned `page_id` for every later message to the same person—do not call this again before each send.
-    - `user_name` must be non-empty and should match someone you can select from LinkedIn’s recipient search.
+    Use when:
+    - You want to confirm the thread opens before typing.
 
-    When to use:
-    - You need a `page_id` that is cleared for messaging to that person.
+    Args:
+    - `user_name`: Name as shown in LinkedIn’s recipient picker.
 
-    Requirements:
-    - Signed in. This tool opens a new tab; it does not take an existing `page_id`.
-
-    The response includes `page_id` on success; pass that same id into `send_messaging_message` one or many times. Call again only for another tab or another recipient.
+    For sending in one step, use `linkedin_send_message_to`. Needs: logged in.
     """
-    if not (user_name or "").strip():
-        return "Failed: user_name must not be empty."
-    url = "https://www.linkedin.com/messaging/thread/new/"
-    try:
-        page_id = await get_chrome_profile_manager().open_page(url)
-    except Exception as e:
-        logger.exception("open_chat_window_of open_page failed user_name=%r", user_name)
-        return f"Failed to open LinkedIn new message page: {e}"
-    messaging, err = await run_messaging_page(page_id)
+    err, _ = await _ensure_messaging_thread(ctx, user_name)
     if err:
-        set_messaging_chat_loaded(page_id, False)
-        return f"{err} page_id={page_id!r}. You may close this tab with close_page if it is not useful."
-    try:
-        ok = await messaging.load_chat(user_name.strip())
-    except Exception as e:
-        logger.exception("open_chat_window_of failed page_id=%s", page_id)
-        set_messaging_chat_loaded(page_id, False)
-        return (
-            f"Failed: open_chat_window_of raised: {e} page_id={page_id!r}. "
-            "You may close this tab with close_page if it is not useful."
-        )
-    set_messaging_chat_loaded(page_id, ok)
-    status = _linkedin_action_message("open_chat_window_of", ok)
-    if ok:
-        return (
-            f"{status} page_id={page_id!r}. "
-            "Use send_messaging_message with this page_id to send one or more messages without calling open_chat_window_of again."
-        )
-    return f"{status} page_id={page_id!r}."
+        return err
+    status = _linkedin_action_message("linkedin_open_chat_with", True)
+    return f"{status} To send text, use linkedin_send_message_to with the same user_name."
 
 
 @mcp.tool
-async def send_messaging_message(page_id: str, message: str) -> str:
+async def linkedin_send_message_to(
+    user_name: str,
+    message: str,
+    ctx: Context = CurrentContext(),
+) -> str:
     """
-    Sends one outbound message in the compose box for a tab that `open_chat_window_of` already succeeded on.
+    Send a LinkedIn direct message to someone chosen by recipient name.
 
-    Ordering (read first):
-    - If you see “No chat loaded for this tab…”, run `open_chat_window_of` once, then send using the `page_id` it returned.
-    - Send the first line and every follow-up by calling this tool again with the same `page_id`; do not reopen the chat between sends.
+    Use when:
+    - The user wants to DM this person.
 
-    When to use:
-    - Any message in that loaded thread, including the very first line after the chat is open.
+    Args:
+    - `user_name`: Name as in LinkedIn’s new-message recipient search.
+    - `message`: Body text (cannot be empty).
 
-    Requirements:
-    - Signed in. `message` must contain real text (whitespace-only is rejected).
-
-    Reply uses `Success: send_messaging_message completed.` or `Failed: send_messaging_message ...`. It does not reopen or reset the thread UI.
+    Needs: logged in. Call again for another message if needed.
     """
-    gate_err = require_messaging_chat_loaded(page_id)
-    if gate_err:
-        return gate_err
     if not (message or "").strip():
         return "Failed: message must not be empty."
-    messaging, err = await run_messaging_page(page_id, wait_for_ready=False)
+
+    err, messaging = await _ensure_messaging_thread(ctx, user_name)
     if err:
         return err
     try:
         ok = await messaging.send_message(message.strip())
     except Exception as e:
-        logger.exception("send_messaging_message failed page_id=%s", page_id)
-        return f"Failed: send_messaging_message raised: {e}"
-    return _linkedin_action_message("send_messaging_message", ok)
+        logger.exception("linkedin_send_message_to failed session_id=%s", ctx.session_id)
+        return f"Failed: linkedin_send_message_to raised: {e}"
+    return _linkedin_action_message("linkedin_send_message_to", ok)
 
 
 if __name__ == "__main__":
