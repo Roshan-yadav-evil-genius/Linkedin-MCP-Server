@@ -1,226 +1,74 @@
-"""Single-process Playwright persistent profile: one context, tabs keyed by short page_id."""
-from __future__ import annotations
-
 import asyncio
+from playwright.async_api import async_playwright
+from typing import Dict
+from playwright.async_api import Page
+
 import logging
-import secrets
-import string
-from pathlib import Path
-
-from playwright.async_api import Error, Page
-
-from browser_profile_config import persistent_context_kwargs
 
 logger = logging.getLogger(__name__)
 
-PAGE_ID_LENGTH = 5
-PAGE_ID_ALPHABET = string.ascii_letters + string.digits
-
-
-class PageNotFoundError(KeyError):
-    """Raised when ``page_id`` is not registered on the manager."""
-
-
 class ChromeProfileManager:
-    """Owns one Playwright driver and one persistent ``BrowserContext``; maps 5-char ids to tabs."""
+    def __init__(self, **kwargs):
 
-    def __init__(self, *, headless: bool = False, user_data_dir: Path | None = None) -> None:
-        self._headless = headless
-        self._user_data_dir = user_data_dir
-        self._lock = asyncio.Lock()
+        # ================================================
+        self.user_data_dir = kwargs.get("user_data_dir")
+        self.headless = kwargs.get("headless", False)
+        self.args = kwargs.get("args", ["--start-maximized"])
+        self.viewport = kwargs.get("viewport", {"width": 1920, "height": 800})
+
+        # ================================================
         self._playwright = None
-        self._context = None
-        self._pages: dict[str, Page] = {}
-        self._interactive_profile_session_active = False
+        self.browser_context = None
+        self.page_instances:Dict[str, Page] = {}
 
-    def _allocate_page_id(self) -> str:
-        assert self._lock.locked()
-        while True:
-            candidate = "".join(secrets.choice(PAGE_ID_ALPHABET) for _ in range(PAGE_ID_LENGTH))
-            if candidate not in self._pages:
-                return candidate
-
-    async def _ensure_persistent_context_has_tab_locked(self) -> None:
-        """
-        Chromium often fails ``new_page()`` with ``Target.createTarget`` if the persistent
-        context has **zero** tabs. Keep one startup tab; close duplicates only.
-        """
-        assert self._lock.locked()
-        assert self._context is not None
-        startup = list(self._context.pages)
-        for p in startup[1:]:
-            try:
-                await p.close()
-            except Exception:
-                logger.exception("Error closing duplicate startup tab")
-        if not self._context.pages:
-            await self._context.new_page()
-        logger.debug("Context tab count after stabilize: %d", len(self._context.pages))
-
-    async def _start_playwright_if_needed(self) -> None:
-        assert self._lock.locked()
-        if self._playwright is not None:
-            return
-        from playwright.async_api import async_playwright
-
+    async def start(self):
+        logger.info("[start] Starting Chrome Profile Manager")
         self._playwright = await async_playwright().start()
-        logger.info("Playwright started")
-
-    async def _launch_persistent_context_if_needed(self) -> None:
-        assert self._lock.locked()
-        if self._context is not None:
-            return
-        assert self._playwright is not None
-        self._context = await self._playwright.chromium.launch_persistent_context(
-            **persistent_context_kwargs(user_data_dir=self._user_data_dir, headless=self._headless)
+        logger.info("[start] Playwright started")
+        self.browser_context = await self._playwright.chromium.launch_persistent_context(
+            user_data_dir=self.user_data_dir,
+            headless=self.headless,
+            args=self.args
         )
-        await self._ensure_persistent_context_has_tab_locked()
-        logger.info("Persistent Chromium context launched")
+        self.browser_context.on("close", self.on_close)
+    
 
-    async def ensure_ready(self) -> None:
-        """Start Playwright and open the persistent context (no tracked tab yet)."""
-        async with self._lock:
-            if self._interactive_profile_session_active:
-                raise RuntimeError(
-                    "Interactive profile login is in progress; wait until the browser window is closed."
-                )
-            await self._start_playwright_if_needed()
-            await self._launch_persistent_context_if_needed()
+    async def on_close(self):
+        logger.info("[on_close] Browser context closed")
+        await self.stop()
 
-    async def run_interactive_profile_session(self, *, start_url: str = "about:blank") -> None:
-        """
-        Open a visible Chromium window (non-headless) on the persistent profile, then block until
-        the user closes the browser. Use for manual sign-in to any site; cookies persist in
-        ``user_data_dir``. Does not register a ``page_id`` (not compatible with ``open_page`` tabs:
-        close all MCP-managed tabs first).
-        """
-        async with self._lock:
-            if self._interactive_profile_session_active:
-                raise RuntimeError("Interactive profile session is already running.")
-            if self._pages:
-                raise RuntimeError(
-                    "Close all MCP-managed tabs with close_page before starting interactive login."
-                )
-            await self._start_playwright_if_needed()
-            assert self._playwright is not None
-            if self._context is not None:
-                await self._context.close()
-                self._context = None
-            self._context = await self._playwright.chromium.launch_persistent_context(
-                **persistent_context_kwargs(user_data_dir=self._user_data_dir, headless=False)
-            )
-            await self._ensure_persistent_context_has_tab_locked()
-            page = self._context.pages[0]
-            await page.goto(start_url, wait_until="domcontentloaded")
-            self._interactive_profile_session_active = True
-            context_ref = self._context
-            logger.info("Interactive profile session started (headed); start_url=%s", start_url)
-
-        try:
-            await context_ref.wait_for_event("close", timeout=0)
-        finally:
-            async with self._lock:
-                self._interactive_profile_session_active = False
-                if self._context is context_ref:
-                    self._context = None
-                self._pages.clear()
-            logger.info("Interactive profile session ended (browser closed)")
-
-    async def open_page(self, url: str) -> str:
-        async with self._lock:
-            if self._interactive_profile_session_active:
-                raise RuntimeError(
-                    "Interactive profile login is in progress; wait until the browser window is closed."
-                )
-            await self._start_playwright_if_needed()
-            await self._launch_persistent_context_if_needed()
-            assert self._context is not None
-            await self._ensure_persistent_context_has_tab_locked()
-            try:
-                page = await self._context.new_page()
-            except Error as e:
-                err = str(e)
-                # Only safe to recreate context when no MCP tabs are tracked (otherwise we'd orphan page_ids).
-                if (
-                    ("Target.createTarget" in err or "Failed to open a new tab" in err)
-                    and not self._pages
-                ):
-                    logger.warning("new_page failed with no tracked tabs (%s); recreating context once", e)
-                    try:
-                        await self._context.close()
-                    except Exception:
-                        logger.exception("Error closing wedged context")
-                    self._context = None
-                    await self._launch_persistent_context_if_needed()
-                    assert self._context is not None
-                    await self._ensure_persistent_context_has_tab_locked()
-                    page = await self._context.new_page()
-                else:
-                    raise
-            page_id = self._allocate_page_id()
-            self._pages[page_id] = page
-            try:
-                await page.goto(url, wait_until="load")
-            except Exception:
-                del self._pages[page_id]
-                await page.close()
-                logger.exception("open_page failed for url=%s", url)
-                raise
-            logger.info("open_page page_id=%s url=%s", page_id, url)
-            return page_id
-
-    async def close_page(self, page_id: str) -> str:
-        async with self._lock:
-            if self._interactive_profile_session_active:
-                raise RuntimeError(
-                    "Interactive profile login is in progress; wait until the browser window is closed."
-                )
-            page = self._pages.pop(page_id, None)
-            if page is None:
-                return f"No page registered for id {page_id!r}."
-            try:
-                await page.close()
-            except Exception:
-                logger.exception("close_page: error closing Playwright page for %s", page_id)
-            logger.info("close_page page_id=%s", page_id)
-            if not self._pages and self._context is not None:
-                await self._context.close()
-                self._context = None
-                logger.info("Last tab closed; persistent context released")
-            return f"Closed page {page_id!r}."
-
-    def get_page(self, page_id: str) -> Page:
-        if self._interactive_profile_session_active:
-            raise RuntimeError(
-                "Interactive profile login is in progress; wait until the browser window is closed."
-            )
-        page = self._pages.get(page_id)
-        if page is None:
-            raise PageNotFoundError(page_id)
+    async def new_page(self, session_id: str):
+        
+        if not self.browser_context or not self._playwright:
+            await self.restart()
+        
+        page = await self.browser_context.new_page()
+        self.page_instances[session_id] = page
         return page
 
-    async def shutdown(self) -> None:
-        async with self._lock:
-            for page_id, page in list(self._pages.items()):
-                try:
-                    await page.close()
-                except Exception:
-                    logger.exception("shutdown: error closing page %s", page_id)
-            self._pages.clear()
-            if self._context is not None:
-                await self._context.close()
-                self._context = None
-            if self._playwright is not None:
-                await self._playwright.stop()
-                self._playwright = None
-            logger.info("ChromeProfileManager shutdown complete")
+    async def get_page(self, session_id: str) -> Page:
+        logger.info(f"[get_page] Processing Session Id {session_id}")
+        if session_id not in self.page_instances:
+            logger.info(f"[get_page] Session Id {session_id} not found, creating new page")
+            return await self.new_page(session_id)
+        logger.info(f"[get_page] Session Id {session_id} found, returning page")
+        return self.page_instances.get(session_id)
 
+    async def close_page(self, session_id: str):
+        page = self.page_instances.get(session_id)
+        if page:
+            await page.close()
+            del self.page_instances[session_id]
 
-_chrome_profile_manager: ChromeProfileManager | None = None
+    async def stop(self):
+        if self.browser_context:
+            await self.browser_context.close()
+            self.browser_context = None
 
+        if self._playwright:
+            await self._playwright.stop()
+            self._playwright = None
 
-def get_chrome_profile_manager() -> ChromeProfileManager:
-    global _chrome_profile_manager
-    if _chrome_profile_manager is None:
-        _chrome_profile_manager = ChromeProfileManager()
-    return _chrome_profile_manager
+    async def restart(self):
+        await self.stop()
+        await self.start()

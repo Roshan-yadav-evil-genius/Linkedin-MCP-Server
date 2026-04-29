@@ -13,7 +13,7 @@ from linkedin_mcp_bridge import (
     set_messaging_chat_loaded,
 )
 from page.search_page.action.types import Filter
-from utils import html_to_markdown
+from core.utils import html_to_markdown
 
 mcp = FastMCP("LinkedInMCP")
 logger = logging.getLogger(__name__)
