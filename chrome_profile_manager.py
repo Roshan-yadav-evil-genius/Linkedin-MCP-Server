@@ -35,12 +35,16 @@ class ChromeProfileManager:
             self.headless,
             self.user_data_dir,
         )
-        self._playwright = await async_playwright().start()
-        self.browser_context = await self._playwright.chromium.launch_persistent_context(
-            user_data_dir=self.user_data_dir,
-            headless=self.headless,
-            args=self.args,
-        )
+        try:
+            self._playwright = await async_playwright().start()
+            self.browser_context = await self._playwright.chromium.launch_persistent_context(
+                user_data_dir=self.user_data_dir,
+                headless=self.headless,
+                args=self.args,
+            )
+        except Exception as e:
+            await self.stop()
+            raise e
         self.browser_context.on("close", self.on_close)
         logger.info("Playwright persistent context ready")
 
@@ -74,19 +78,6 @@ class ChromeProfileManager:
         logger.debug("Reusing page for session_id=%s", session_id)
         return self.page_instances.get(session_id)
 
-    async def close_page(self, session_id: str):
-        page = self.page_instances.get(session_id)
-        if page:
-            await page.close()
-            del self.page_instances[session_id]
-            logger.info(
-                "Closed page for session_id=%s (open sessions=%d)",
-                session_id,
-                len(self.page_instances),
-            )
-            return
-        logger.warning("close_page: no page for session_id=%s", session_id)
-
     async def stop(self):
         n_pages = len(self.page_instances)
         if n_pages:
@@ -95,13 +86,16 @@ class ChromeProfileManager:
                 n_pages,
             )
             self.page_instances.clear()
-
-        if self.browser_context:
-            await self.browser_context.close()
+        try:
+            if self.browser_context:
+                await self.browser_context.close()
+        except Exception as e:
             self.browser_context = None
-
-        if self._playwright:
-            await self._playwright.stop()
+        try:    
+            if self._playwright:
+                await self._playwright.stop()
+                self._playwright = None
+        except Exception as e:
             self._playwright = None
 
         logger.info("Playwright stopped")
