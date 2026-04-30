@@ -1,7 +1,0 @@
-{
-    "mcpServers": {
-      "LinkedInMCP": {
-        "url": "http://localhost:9090/mcp"
-      }
-    }
-  }

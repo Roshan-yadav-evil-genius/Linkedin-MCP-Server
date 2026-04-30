@@ -1,0 +1,4 @@
+ fastmcp run server.py:mcp --transport http --port 9090
+
+
+ npx @playwright/mcp@latest --port 8931 --user-data-dir "/home/roshan-yadav/Desktop/TheOneEye/TheOneEye-LinkedIn-MCP/ChromeUserData"

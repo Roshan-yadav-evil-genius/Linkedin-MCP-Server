@@ -4,44 +4,32 @@ from typing import Dict
 
 import logging
 
+from browser_profile_config import persistent_context_kwargs
+
 logger = logging.getLogger(__name__)
 
 
 class ChromeProfileManager:
-    def __init__(self, **kwargs):
-
-        # ================================================
-        self.user_data_dir = kwargs.get("user_data_dir")
-        self.headless = kwargs.get("headless", False)
-        self.args = kwargs.get("args", ["--start-maximized"])
-        self.viewport = kwargs.get("viewport", {"width": 1920, "height": 800})
-
+    def __init__(self):
         # ================================================
         self._playwright = None
         self.browser_context = None
         self.page_instances: Dict[str, Page] = {}
 
         logger.debug(
-            "ChromeProfileManager init headless=%s viewport=%s args=%s user_data_dir=%s",
-            self.headless,
-            self.viewport,
-            self.args,
-            self.user_data_dir,
+            "ChromeProfileManager init"
         )
+        self.persistent_context_kwargs = persistent_context_kwargs()
 
     async def start(self):
         logger.info(
             "Starting Playwright persistent context (headless=%s, user_data_dir=%s)",
-            self.headless,
-            self.user_data_dir,
+            self.persistent_context_kwargs["headless"],
+            self.persistent_context_kwargs["user_data_dir"],
         )
         try:
             self._playwright = await async_playwright().start()
-            self.browser_context = await self._playwright.chromium.launch_persistent_context(
-                user_data_dir=self.user_data_dir,
-                headless=self.headless,
-                args=self.args,
-            )
+            self.browser_context = await self._playwright.chromium.launch_persistent_context(**self.persistent_context_kwargs)
         except Exception as e:
             await self.stop()
             raise e

@@ -7,7 +7,6 @@ from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
 from mcp.server.fastmcp import Image
 
-from browser_profile_config import persistent_context_kwargs
 from chrome_profile_manager import ChromeProfileManager
 from core.utils import html_to_markdown
 from page.messaging_page.action.page_action import MessagingPage
@@ -21,7 +20,7 @@ mcp = FastMCP("LinkedInMCP")
 configure_logging()
 logger = logging.getLogger(__name__)
 
-browser = ChromeProfileManager(**persistent_context_kwargs())
+browser = ChromeProfileManager()
 
 LINKEDIN_LOGIN_URL = "https://www.linkedin.com/login"
 
