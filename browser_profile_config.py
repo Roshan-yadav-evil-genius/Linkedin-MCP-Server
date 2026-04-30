@@ -7,6 +7,7 @@ from typing import Any
 CHROME_PROFILE = Path("./ChromeUserData")
 
 DEFAULT_VIEWPORT: dict[str, int] = {"width": 1920, "height": 800}
+DEFAULT_BROWSER_CHANNEL = "chrome"
 
 # Keys are Chromium CLI flags passed to launch; values are human-readable reasons (docs only).
 CHROMIUM_LAUNCH_REASONS: dict[str, str] = {
@@ -37,11 +38,13 @@ def persistent_context_kwargs(
     *,
     user_data_dir: Path | None = None,
     headless: bool = False,
+    channel: str = DEFAULT_BROWSER_CHANNEL,
 ) -> dict[str, Any]:
     """Arguments for ``playwright.chromium.launch_persistent_context``."""
     return {
         "user_data_dir": str(user_data_dir or CHROME_PROFILE),
         "headless": headless,
+        "channel": channel,
         "args": list(CHROMIUM_LAUNCH_REASONS.keys()),
         "viewport": dict(DEFAULT_VIEWPORT),
     }

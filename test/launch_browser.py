@@ -15,10 +15,11 @@ logger = logging.getLogger(__name__)
 from playwright.async_api import async_playwright
 from page.messaging_page.action.page_action import MessagingPage
 
-
 async def main():
+    launch_kwargs = persistent_context_kwargs()
+
     async with async_playwright() as p:
-        context = await p.chromium.launch_persistent_context(**persistent_context_kwargs())
+        context = await p.chromium.launch_persistent_context(**launch_kwargs)
 
         page = await context.new_page()
         profile_url = "https://www.linkedin.com/messaging/thread/new/"
