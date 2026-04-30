@@ -14,8 +14,11 @@ from page.messaging_page.action.page_action import MessagingPage
 from page.profile_page.actions.page_action import ProfilePage
 from page.search_page.action.page_action import SearchPage
 from page.search_page.action.types import Filter
+from test.base import configure_logging
 
 mcp = FastMCP("LinkedInMCP")
+
+configure_logging()
 logger = logging.getLogger(__name__)
 
 browser = ChromeProfileManager(**persistent_context_kwargs())

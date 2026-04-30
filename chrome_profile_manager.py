@@ -1,11 +1,11 @@
-import asyncio
 from playwright.async_api import async_playwright
-from typing import Dict
 from playwright.async_api import Page
+from typing import Dict
 
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 class ChromeProfileManager:
     def __init__(self, **kwargs):
@@ -19,33 +19,59 @@ class ChromeProfileManager:
         # ================================================
         self._playwright = None
         self.browser_context = None
-        self.page_instances:Dict[str, Page] = {}
+        self.page_instances: Dict[str, Page] = {}
+
+        logger.debug(
+            "ChromeProfileManager init headless=%s viewport=%s args=%s user_data_dir=%s",
+            self.headless,
+            self.viewport,
+            self.args,
+            self.user_data_dir,
+        )
 
     async def start(self):
+        logger.info(
+            "Starting Playwright persistent context (headless=%s, user_data_dir=%s)",
+            self.headless,
+            self.user_data_dir,
+        )
         self._playwright = await async_playwright().start()
         self.browser_context = await self._playwright.chromium.launch_persistent_context(
             user_data_dir=self.user_data_dir,
             headless=self.headless,
-            args=self.args
+            args=self.args,
         )
         self.browser_context.on("close", self.on_close)
-    
+        logger.info("Playwright persistent context ready")
 
     async def on_close(self):
+        logger.warning(
+            "Browser context closed (external or crash); stopping Playwright session"
+        )
         await self.stop()
 
     async def new_page(self, session_id: str):
-        
         if not self.browser_context or not self._playwright:
+            logger.info(
+                "No active browser context; restarting before new_page session_id=%s",
+                session_id,
+            )
             await self.restart()
-        
+
         page = await self.browser_context.new_page()
         self.page_instances[session_id] = page
+        logger.info(
+            "New page for session_id=%s (open sessions=%d)",
+            session_id,
+            len(self.page_instances),
+        )
         return page
 
     async def get_page(self, session_id: str) -> Page:
         if session_id not in self.page_instances:
+            logger.debug("No page for session_id=%s; creating", session_id)
             return await self.new_page(session_id)
+        logger.debug("Reusing page for session_id=%s", session_id)
         return self.page_instances.get(session_id)
 
     async def close_page(self, session_id: str):
@@ -53,8 +79,23 @@ class ChromeProfileManager:
         if page:
             await page.close()
             del self.page_instances[session_id]
+            logger.info(
+                "Closed page for session_id=%s (open sessions=%d)",
+                session_id,
+                len(self.page_instances),
+            )
+            return
+        logger.warning("close_page: no page for session_id=%s", session_id)
 
     async def stop(self):
+        n_pages = len(self.page_instances)
+        if n_pages:
+            logger.info(
+                "Stopping Playwright; dropping %d session page(s) without explicit close",
+                n_pages,
+            )
+            self.page_instances.clear()
+
         if self.browser_context:
             await self.browser_context.close()
             self.browser_context = None
@@ -63,6 +104,9 @@ class ChromeProfileManager:
             await self._playwright.stop()
             self._playwright = None
 
+        logger.info("Playwright stopped")
+
     async def restart(self):
+        logger.info("Restarting Playwright session")
         await self.stop()
         await self.start()
