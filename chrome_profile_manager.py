@@ -29,7 +29,8 @@ class ChromeProfileManager:
         )
         try:
             self._playwright = await async_playwright().start()
-            self.browser_context = await self._playwright.chromium.launch_persistent_context(**self.persistent_context_kwargs)
+            self.browser = await self._playwright.chromium.connect_over_cdp("http://localhost:9222")
+            self.browser_context = self.browser.contexts[0]
         except Exception as e:
             await self.stop()
             raise e
