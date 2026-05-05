@@ -1,8 +1,8 @@
-from playwright.async_api import async_playwright
-from playwright.async_api import Page
+import asyncio
+import logging
 from typing import Dict
 
-import logging
+from playwright.async_api import Page, async_playwright
 
 from browser_profile_config import persistent_context_kwargs
 
@@ -11,9 +11,10 @@ logger = logging.getLogger(__name__)
 
 class ChromeProfileManager:
     def __init__(self):
-        # ================================================
         self._playwright = None
+        self.browser = None
         self.browser_context = None
+        self._stopping = False
         self.page_instances: Dict[str, Page] = {}
 
         logger.debug(
@@ -23,7 +24,7 @@ class ChromeProfileManager:
 
     async def start(self):
         logger.info(
-            "Starting Playwright persistent context (headless=%s, user_data_dir=%s)",
+            "Starting Playwright CDP session (headless=%s, user_data_dir=%s)",
             self.persistent_context_kwargs["headless"],
             self.persistent_context_kwargs["user_data_dir"],
         )
@@ -34,10 +35,12 @@ class ChromeProfileManager:
         except Exception as e:
             await self.stop()
             raise e
-        self.browser_context.on("close", self.on_close)
-        logger.info("Playwright persistent context ready")
+        self.browser_context.on("close", lambda: asyncio.create_task(self.on_close()))
+        logger.info("Playwright CDP session ready")
 
     async def on_close(self):
+        if self._stopping:
+            return
         logger.warning(
             "Browser context closed (external or crash); stopping Playwright session"
         )
@@ -52,6 +55,14 @@ class ChromeProfileManager:
             await self.restart()
 
         page = await self.browser_context.new_page()
+
+        def _cleanup_closed_page():
+            cached = self.page_instances.get(session_id)
+            if cached is page:
+                self.page_instances.pop(session_id, None)
+                logger.info("Removed closed page for session_id=%s", session_id)
+
+        page.on("close", _cleanup_closed_page)
         self.page_instances[session_id] = page
         logger.info(
             "New page for session_id=%s (open sessions=%d)",
@@ -61,31 +72,58 @@ class ChromeProfileManager:
         return page
 
     async def get_page(self, session_id: str) -> Page:
-        if session_id not in self.page_instances:
+        page = self.page_instances.get(session_id)
+        if page and page.is_closed():
+            logger.info("Cached page already closed for session_id=%s; recreating", session_id)
+            self.page_instances.pop(session_id, None)
+            page = None
+        if not page:
             logger.debug("No page for session_id=%s; creating", session_id)
             return await self.new_page(session_id)
         logger.debug("Reusing page for session_id=%s", session_id)
-        return self.page_instances.get(session_id)
+        return page
+
+    async def close_page(self, session_id: str) -> str:
+        page = self.page_instances.pop(session_id, None)
+        if not page:
+            logger.info("No page found to close for session_id=%s", session_id)
+            return "not_found"
+        if page.is_closed():
+            logger.info("Page already closed for session_id=%s", session_id)
+            return "already_closed"
+        try:
+            await page.close()
+            logger.info("Closed page for session_id=%s", session_id)
+            return "closed"
+        except Exception:
+            logger.exception("Failed closing page for session_id=%s", session_id)
+            return "error"
 
     async def stop(self):
+        if self._stopping:
+            return
+        self._stopping = True
         n_pages = len(self.page_instances)
         if n_pages:
-            logger.info(
-                "Stopping Playwright; dropping %d session page(s) without explicit close",
-                n_pages,
-            )
-            self.page_instances.clear()
+            logger.info("Stopping Playwright; closing %d managed session page(s)", n_pages)
+            for session_id in list(self.page_instances.keys()):
+                await self.close_page(session_id)
         try:
-            if self.browser_context:
-                await self.browser_context.close()
-        except Exception as e:
+            if self.browser:
+                await self.browser.close()
+        except Exception:
+            logger.exception("Failed to close CDP browser connection cleanly")
+        finally:
+            self.browser = None
             self.browser_context = None
-        try:    
+        try:
             if self._playwright:
                 await self._playwright.stop()
-                self._playwright = None
-        except Exception as e:
+        except Exception:
+            logger.exception("Failed to stop Playwright cleanly")
+        finally:
             self._playwright = None
+            self._stopping = False
 
         logger.info("Playwright stopped")
 

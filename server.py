@@ -5,7 +5,6 @@ from urllib.parse import quote_plus, urlparse
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
-from mcp.server.fastmcp import Image
 
 from chrome_profile_manager import ChromeProfileManager
 from core.utils import html_to_markdown
@@ -24,6 +23,14 @@ browser = ChromeProfileManager()
 
 LINKEDIN_LOGIN_URL = "https://www.linkedin.com/login"
 
+
+def _is_linkedin_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+    hostname = (parsed.hostname or "").lower()
+    return parsed.scheme == "https" and "linkedin.com" in hostname
 
 
 def _linkedin_action_message(tool_name: str, ok: bool) -> str:
@@ -86,7 +93,61 @@ async def _ensure_messaging_thread(
 # ============================================================= [ Navigation & page read ] =============================================================
 
 
-# @mcp.tool
+@mcp.tool
+async def linkedin_login(ctx: Context = CurrentContext()) -> str:
+    """Open LinkedIn login for manual authentication in this session tab."""
+    page = await browser.get_page(ctx.session_id)
+    try:
+        await page.goto(LINKEDIN_LOGIN_URL, wait_until="load")
+    except Exception as e:
+        logger.exception("linkedin_login failed session_id=%s", ctx.session_id)
+        return f"Failed to open LinkedIn login page: {e}"
+    return "Opened LinkedIn login page. Complete sign-in in the browser tab."
+
+
+@mcp.tool
+async def linkedin_open_page(url: str, ctx: Context = CurrentContext()) -> str:
+    """Navigate this session tab to a LinkedIn HTTPS URL."""
+    normalized = (url or "").strip()
+    if not _is_linkedin_url(normalized):
+        return "Failed: url must be a valid https://...linkedin.com/... URL."
+    page = await browser.get_page(ctx.session_id)
+    try:
+        await page.goto(normalized, wait_until="load")
+    except Exception as e:
+        logger.exception("linkedin_open_page failed session_id=%s", ctx.session_id)
+        return f"Failed to open URL: {e}"
+    return f"Opened LinkedIn page: {normalized}"
+
+
+@mcp.tool
+async def linkedin_close_page(ctx: Context = CurrentContext()) -> str:
+    """Close only this session's managed tab."""
+    status = await browser.close_page(ctx.session_id)
+    if status == "closed":
+        return "Closed this session tab."
+    if status in {"not_found", "already_closed"}:
+        return "No open session tab found to close."
+    return "Failed to close this session tab. Check server logs for details."
+
+
+@mcp.tool
+async def linkedin_run_javascript(script: str, ctx: Context = CurrentContext()) -> str:
+    """Evaluate JavaScript on the current session page and return the result."""
+    if not (script or "").strip():
+        return "Failed: script must not be empty."
+    page = await browser.get_page(ctx.session_id)
+    try:
+        result = await page.evaluate(script)
+    except Exception as e:
+        logger.exception("linkedin_run_javascript failed session_id=%s", ctx.session_id)
+        return f"Failed to evaluate script: {e}"
+    if isinstance(result, (dict, list, tuple, int, float, bool)) or result is None:
+        return json.dumps(result)
+    return str(result)
+
+
+@mcp.tool
 async def linkedin_get_page_content(ctx: Context = CurrentContext()) -> str:
     """
     Read the current page as readable text (Markdown-style) for the model.
@@ -157,7 +218,6 @@ async def linkedin_send_connection_request(
         )
         return f"Failed: linkedin_send_connection_request raised: {e}"
 
-    await browser.stop()
     return _linkedin_action_message("linkedin_send_connection_request", ok)
 
 
@@ -205,12 +265,11 @@ async def linkedin_follow_profile(
     except Exception as e:
         logger.exception("linkedin_follow_profile failed session_id=%s", ctx.session_id)
         return f"Failed: linkedin_follow_profile raised: {e}"
-    await browser.stop()
     return _linkedin_action_message("linkedin_follow_profile", ok)
 
 
 # ============================================================= [ People search ] =============================================================
-# @mcp.tool
+@mcp.tool
 async def linkedin_search_people(
     query: str,
     in_my_connections: bool = False,
@@ -257,7 +316,7 @@ async def linkedin_search_people(
     )
 
 
-# @mcp.tool
+@mcp.tool
 async def linkedin_apply_search_filters(
     filter: Filter, ctx: Context = CurrentContext()
 ) -> str:
@@ -296,7 +355,7 @@ async def linkedin_apply_search_filters(
     return _linkedin_action_message("linkedin_apply_search_filters", ok)
 
 
-# @mcp.tool
+@mcp.tool
 async def linkedin_search_next_page(ctx: Context = CurrentContext()) -> str:
     """
     Go to the next page of LinkedIn people search results.
@@ -330,7 +389,7 @@ async def linkedin_search_next_page(ctx: Context = CurrentContext()) -> str:
     return _linkedin_action_message("linkedin_search_next_page", ok)
 
 
-# @mcp.tool
+@mcp.tool
 async def linkedin_search_previous_page(ctx: Context = CurrentContext()) -> str:
     """
     Go to the previous page of LinkedIn people search results.
@@ -343,7 +402,6 @@ async def linkedin_search_previous_page(ctx: Context = CurrentContext()) -> str:
     page = await browser.get_page(ctx.session_id)
     search = SearchPage(page)
     if not search.is_valid_page():
-        await browser.stop()
         return (
             "This tab is not LinkedIn people search (/search/results/people/). "
             "Use linkedin_search_people, linkedin_open_page with a people search URL, or navigate first."
@@ -351,7 +409,6 @@ async def linkedin_search_previous_page(ctx: Context = CurrentContext()) -> str:
     try:
         await search.wait_for_page_to_load()
     except Exception as e:
-        await browser.stop()
         logger.exception(
             "linkedin_search_previous_page wait failed session_id=%s", ctx.session_id
         )
@@ -359,17 +416,15 @@ async def linkedin_search_previous_page(ctx: Context = CurrentContext()) -> str:
     try:
         ok = await search.click_on_pagination_previous_button()
     except Exception as e:
-        await browser.stop()
         logger.exception(
             "linkedin_search_previous_page failed session_id=%s", ctx.session_id
         )
         return f"Failed: linkedin_search_previous_page raised: {e}"
-    await browser.stop()
     return _linkedin_action_message("linkedin_search_previous_page", ok)
 
 
 # ============================================================= [ Messaging ] =============================================================
-# @mcp.tool return chat data
+@mcp.tool
 async def linkedin_open_chat_with(
     user_name: str, ctx: Context = CurrentContext()
 ) -> str:
@@ -386,10 +441,8 @@ async def linkedin_open_chat_with(
     """
     err, _ = await _ensure_messaging_thread(ctx, user_name)
     if err:
-        await browser.stop()
         return err
     status = _linkedin_action_message("linkedin_open_chat_with", True)
-    await browser.stop()
     return (
         f"{status} To send text, use linkedin_send_message_to with the same user_name."
     )
@@ -418,7 +471,6 @@ async def linkedin_send_message_to(
 
     err, messaging = await _ensure_messaging_thread(ctx, user_name)
     if err:
-        await browser.stop()
         return err
     try:
         ok = await messaging.send_message(message.strip())
@@ -426,9 +478,7 @@ async def linkedin_send_message_to(
         logger.exception(
             "linkedin_send_message_to failed session_id=%s", ctx.session_id
         )
-        await browser.stop()
         return f"Failed: linkedin_send_message_to raised: {e}"
-    await browser.stop()
     return _linkedin_action_message("linkedin_send_message_to", ok)
 
 
