@@ -1,3 +1,20 @@
 fastmcp run server.py:mcp --transport http --port 9090
 
-npx -y @playwright/mcp@latest --port 8931 --cdp-endpoint "ws://127.0.0.1:9222/devtools/browser/3bd3197f-d619-4546-b239-085993155efc" --output-dir "/home/roshan-yadav/Desktop/TheOneEye/TheOneEye-LinkedinAccount-Maintainer/AutonomousResearch/Agent/.playwright-mcp"
+
+playwright server switch to that specififc directory then only filesystem backed with cirtual mode true work
+
+workspace = Path(
+    "/home/roshan-yadav/Desktop/TheOneEye/TheOneEye-LinkedinAccount-Maintainer/AutonomousResearch/Agent/"
+)
+
+my_backend = FilesystemBackend(root_dir=workspace, virtual_mode=True)
+
+my_permissions = [
+    FilesystemPermission(
+        operations=["write", "read"],
+        paths=["/**"], 
+    )
+]
+
+cd /home/roshan-yadav/Desktop/TheOneEye/TheOneEye-LinkedinAccount-Maintainer/AutonomousResearch/Agent
+npx -y @playwright/mcp@latest --port 8931 --cdp-endpoint "ws://127.0.0.1:9222/devtools/browser/85e01a57-296f-43e7-a256-8a9dec704e8e" --output-dir "./.playwright-mcp"
